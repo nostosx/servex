@@ -1,0 +1,13 @@
+# Local workspaces are per-developer.
+go.work
+go.work.sum
+*.test
+*.out
+/coverage.txt
+/bin/
+/dist/
+.env
+.env.*
+!.env.example
+*.prof
+.DS_Store
