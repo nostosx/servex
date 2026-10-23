@@ -1,0 +1,49 @@
+# Releasing servex
+
+The first release is planned as v1.0.0 and has not been published. This document is a
+manual release procedure; the CI workflow validates changes and does not
+publish releases or create tags.
+
+## Preparation
+
+1. Choose a module version independently of the Go 1.27.3 toolchain version.
+   Core tags use `vMAJOR.MINOR.PATCH`, with no directory prefix. Follow Go's
+   major-version import-path rules before planning a v2 release.
+2. Review the public API, security boundaries, dependency table in
+   [CONTRIBUTING.md](CONTRIBUTING.md#dependency-boundaries) and relevant
+   regressions. Check both READMEs against the actual API. Review the prepared
+   `v1.0.0` notes in [CHANGELOG.md](CHANGELOG.md) and add the release date
+   when publishing. For later releases, move the selected entries from
+   `Unreleased` into the matching dated version section.
+3. Verify the published kitx v1.0.0 dependency without local replacements.
+   Confirm that kitx is the only external module requirement, the license is
+   included and release contents contain no credentials or local artifacts.
+4. With Go 1.27.3 and the documented tool versions, run `make check`,
+   `make lint` and `make vulncheck`. Require successful CI for the exact
+   release revision. Record service or platform coverage separately from
+   compilation-only checks.
+
+## Publication and downstream verification
+
+Publishing requires a separate maintainer decision. Release and independently
+verify any new kitx version before adopting it; v1.0.0 is already published.
+Publish the core before servex-contrib modules and servex-examples. Create the
+chosen core tag only after the release gates pass and publish notes from its
+changelog section. Record the exact commit and its CI run; local checks alone
+must not be described as hosted CI verification.
+
+From a fresh consumer module outside the development workspace, fetch the
+published version with `GOWORK=off`, import a public package and build it
+without sibling directories or replacement directives. Verify the published
+module version and license. A local check against a sibling checkout does not
+prove proxy availability or downstream installation.
+
+After core installation succeeds, servex-contrib can replace its placeholder
+core requirements with this version, remove local replacements and run its own
+release gates. Finally update servex-examples to released dependencies and
+verify its documented setup from an independent checkout. Do not advertise
+those projects as installable until their own checks pass.
+
+If a published version is faulty, publish a corrected version and document
+its impact; do not move an existing tag. Use a Go module retraction when
+appropriate and explain the replacement version.
