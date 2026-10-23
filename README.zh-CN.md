@@ -7,24 +7,19 @@ servex 是面向 Go 微服务的工具库，核心提供协议无关的契约和
 如 gRPC、Redis 和 OpenTelemetry，位于
 [servex-contrib](https://github.com/nostosx/servex-contrib)。
 
-当前正在准备首个正式版本 v1.0.0，尚未发布。开发通过本地 `replace` 使用源码，
-servex-contrib 也采用这一方式。
-首次发布并验证安装之前，请按下文完成本地配置。可运行的 HTTP 和 gRPC 程序位于独立的
+当前版本为 v1.0.0，已发布的 v1 版本保持公开 API 兼容，具体变更见
+[CHANGELOG.md](CHANGELOG.md)。可运行的 HTTP 和 gRPC 程序位于独立的
 [servex-examples](https://github.com/nostosx/servex-examples) 项目。
 
 ## 开始使用
 
-需要 Go 1.27.3。假设应用目录旁已有 `servex/`，在应用模块根目录添加依赖和替换。
-kitx v1.0.0 从 Go 模块代理解析，无需本地仓库：
+需要 Go 1.27.3。在应用模块根目录安装：
 
 ```sh
-go mod edit -require=github.com/nostosx/servex@v0.0.0-00010101000000-000000000000
-go mod edit -replace=github.com/nostosx/servex=../servex
-go mod tidy
+go get github.com/nostosx/servex@v1.0.0
 ```
 
-请按实际目录调整路径。核心发布后，改用已发布版本，例如
-`go get github.com/nostosx/servex@v1.0.0`，并移除本地替换。
+kitx v1.0.0 从 Go 模块代理解析，无需并排检出仓库或添加本地替换。
 核心标签不带目录前缀，例如 `v1.0.0`。
 
 ## 设计原则

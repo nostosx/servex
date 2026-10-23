@@ -1,7 +1,7 @@
 # Releasing servex
 
-The first release is planned as v1.0.0 and has not been published. This document is a
-manual release procedure; the CI workflow validates changes and does not
+Core releases start at v1.0.0. This document is a manual release procedure;
+the CI workflow validates changes and does not
 publish releases or create tags.
 
 ## Preparation
@@ -11,10 +11,8 @@ publish releases or create tags.
    major-version import-path rules before planning a v2 release.
 2. Review the public API, security boundaries, dependency table in
    [CONTRIBUTING.md](CONTRIBUTING.md#dependency-boundaries) and relevant
-   regressions. Check both READMEs against the actual API. Review the prepared
-   `v1.0.0` notes in [CHANGELOG.md](CHANGELOG.md) and add the release date
-   when publishing. For later releases, move the selected entries from
-   `Unreleased` into the matching dated version section.
+   regressions. Check both READMEs against the actual API. Move the selected entries from `Unreleased` into the matching version
+   section in [CHANGELOG.md](CHANGELOG.md) and record the release date.
 3. Verify the published kitx v1.0.0 dependency without local replacements.
    Confirm that kitx is the only external module requirement, the license is
    included and release contents contain no credentials or local artifacts.

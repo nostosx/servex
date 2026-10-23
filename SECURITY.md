@@ -1,7 +1,7 @@
 # Security policy
 
-servex is pre-release. No released version currently has a security-support
-commitment. Reports about the current development code are welcome.
+Security fixes target the latest minor release in the v1 series, starting
+with v1.0.0. Include the affected version or commit in your report.
 
 ## Reporting a vulnerability
 

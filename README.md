@@ -9,30 +9,22 @@ standard library and [kitx](https://github.com/nostosx/kitx). Implementations
 that need third-party SDKs, such as gRPC, Redis and OpenTelemetry, live in
 [servex-contrib](https://github.com/nostosx/servex-contrib).
 
-Status: preparing the first release, v1.0.0. No tagged release is available yet.
-Current development
-uses a local checkout through a `replace` directive (this is how
-servex-contrib builds today). Follow the local setup below until the first
-release has been published and its installation verified.
+The current release is v1.0.0. Published v1 releases preserve public API
+compatibility; see [CHANGELOG.md](CHANGELOG.md).
 
 Runnable HTTP and gRPC programs live in the separate
 [servex-examples](https://github.com/nostosx/servex-examples) project.
 
 ## Getting started
 
-Requires Go 1.27.3. With a local `servex/` checkout next to your application,
-add the core to the application's module. kitx v1.0.0 resolves from the Go
-module proxy and needs no local checkout:
+Requires Go 1.27.3. Add servex to your application module:
 
 ```sh
-go mod edit -require=github.com/nostosx/servex@v0.0.0-00010101000000-000000000000
-go mod edit -replace=github.com/nostosx/servex=../servex
-go mod tidy
+go get github.com/nostosx/servex@v1.0.0
 ```
 
-Adjust the path for your directory layout. After a core release is available,
-use its version (for example `go get github.com/nostosx/servex@v1.0.0`)
-instead. Core tags have no directory prefix: `v1.0.0`.
+kitx v1.0.0 resolves from the Go module proxy. No sibling checkout or local
+replacement is needed. Core tags have no directory prefix: `v1.0.0`.
 
 ## Design principles
 

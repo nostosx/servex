@@ -1,14 +1,15 @@
 # Changelog
 
-User-visible changes are recorded here. No version has been released yet;
-the entries below describe the initial release scope. Published v1 releases
+User-visible changes are recorded here. Published v1 releases
 preserve public API compatibility following [semantic versioning](https://semver.org).
 
 ## Unreleased
 
 ## v1.0.0
 
-Prepared first release; not yet published.
+Release date: 2026-10-23.
+
+Initial release of `github.com/nostosx/servex`.
 
 ### Added
 
