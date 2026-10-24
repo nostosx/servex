@@ -85,8 +85,18 @@ imports and approved kitx packages:
 
 ## Example
 
-An HTTP service with one route, readiness tied to the application state and
-graceful shutdown on SIGINT/SIGTERM:
+To try the following service in a new directory, initialize an application module:
+
+```sh
+mkdir servex-demo
+cd servex-demo
+go mod init example.com/servex-demo
+go get github.com/nostosx/servex@v1.0.0
+mkdir server client
+```
+
+Save the following as `server/main.go`. It provides one route, readiness tied
+to the application state and graceful shutdown on SIGINT/SIGTERM:
 
 ```go
 package main
@@ -147,13 +157,20 @@ func main() {
 }
 ```
 
-`curl http://127.0.0.1:8000/v1/users/7` returns `{"id":7,"name":"alice"}`;
+Resolve the imports after saving the file, then start the server:
+
+```sh
+go mod tidy
+go run ./server
+```
+
+In another terminal, `curl http://127.0.0.1:8000/v1/users/7` returns `{"id":7,"name":"alice"}`;
 `/v1/users/0` returns status 400 with the errorx body.
 The listener is local; configure authentication, authorization and TLS before
 exposing a service. In-memory reference implementations provide no persistence
 or cross-process coordination.
 
-Calling the route from another service:
+Save this client as `client/main.go` in the same demo module:
 
 ```go
 package main
@@ -195,6 +212,9 @@ func main() {
 	fmt.Println(reply.(*User).Name)
 }
 ```
+
+With the server running, run `go run ./client` from the demo module root in
+another terminal. It prints `alice`. Stop the server with Ctrl+C.
 
 To make the service discoverable, add
 `discovery.Registration(registrar, discovery.Instance{Name: "user"}, srv)`

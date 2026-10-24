@@ -5,6 +5,9 @@ preserve public API compatibility following [semantic versioning](https://semver
 
 ## Unreleased
 
+- Complete the README's standalone HTTP example with module initialization,
+  dependency resolution and separate server/client run instructions.
+
 ## v1.0.0
 
 Release date: 2026-10-23.

@@ -68,7 +68,17 @@ kitx v1.0.0 从 Go 模块代理解析，无需并排检出仓库或添加本地�
 
 ## 示例
 
-下面的 HTTP 服务绑定路径参数，返回 JSON，并在 SIGINT/SIGTERM 时优雅关闭。
+在新目录中初始化应用模块：
+
+```sh
+mkdir servex-demo
+cd servex-demo
+go mod init example.com/servex-demo
+go get github.com/nostosx/servex@v1.0.0
+mkdir server client
+```
+
+将下面的代码保存为 `server/main.go`。HTTP 服务绑定路径参数，返回 JSON，并在 SIGINT/SIGTERM 时优雅关闭。
 就绪检查跟随应用状态；监听地址限定为本机，并显式设置请求体限制和连接超时。
 
 ```go
@@ -130,11 +140,18 @@ func main() {
 }
 ```
 
-`curl http://127.0.0.1:8000/v1/users/7` 返回 `{"id":7,"name":"alice"}`；
+保存文件后解析导入的依赖，再启动服务：
+
+```sh
+go mod tidy
+go run ./server
+```
+
+在另一个终端执行 `curl http://127.0.0.1:8000/v1/users/7` 返回 `{"id":7,"name":"alice"}`；
 `/v1/users/0` 返回 HTTP 400 和 errorx 错误体。对外提供服务前，请配置认证、授权和 TLS。
 内存参考实现不提供持久化或跨进程协调。
 
-另一个服务可通过客户端调用该路由：
+将下面的客户端保存为同一示例模块中的 `client/main.go`：
 
 ```go
 package main
@@ -176,6 +193,9 @@ func main() {
 	fmt.Println(reply.(*User).Name)
 }
 ```
+
+保持服务运行，在另一个终端从示例模块根目录执行 `go run ./client`，输出为 `alice`。
+使用 Ctrl+C 停止服务。
 
 需要服务注册时，将
 `discovery.Registration(registrar, discovery.Instance{Name: "user"}, srv)`
