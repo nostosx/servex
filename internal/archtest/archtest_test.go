@@ -30,6 +30,7 @@ const anyCorePackage = "*"
 // module they may only depend on the standard library, the module itself and kitx.
 var allowed = map[string][]string{
 	"endpoint":              nil,
+	"cqrs":                  nil,
 	"metadata":              nil,
 	"errorx":                nil,
 	"health":                nil,

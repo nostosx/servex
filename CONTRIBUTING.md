@@ -72,6 +72,7 @@ transitive imports.
 | Package | Allowed core imports |
 |---|---|
 | `endpoint` | none |
+| `cqrs` | none |
 | `metadata` | none |
 | `errorx` | none |
 | `health` | none |
