@@ -197,7 +197,9 @@ func (q *Queue) next(ctx context.Context) *entry {
 			return nil
 		}
 		q.mu.Lock()
-		if q.closed {
+		// Cancellation may have happened while this worker waited for the lock.
+		// Do not take an interrupted job requeued by another stopping worker.
+		if q.closed || ctx.Err() != nil {
 			q.mu.Unlock()
 			return nil
 		}
