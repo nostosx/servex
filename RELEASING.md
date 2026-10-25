@@ -1,6 +1,6 @@
 # Releasing servex
 
-Core releases start at v1.0.0. This document is a manual release procedure;
+Core releases use semantic versions. This document is a manual release procedure;
 the CI workflow validates changes and does not
 publish releases or create tags.
 
@@ -36,9 +36,9 @@ without sibling directories or replacement directives. Verify the published
 module version and license. A local check against a sibling checkout does not
 prove proxy availability or downstream installation.
 
-After core installation succeeds, servex-contrib can replace its placeholder
-core requirements with this version, remove local replacements and run its own
-release gates. Finally update servex-examples to released dependencies and
+After core installation succeeds, servex-contrib can adopt this version, replace
+any development snapshots or local replacements, and run its own release gates.
+Finally update servex-examples to released dependencies and
 verify its documented setup from an independent checkout. Do not advertise
 those projects as installable until their own checks pass.
 

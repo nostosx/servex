@@ -7,7 +7,7 @@ servex 是面向 Go 微服务的工具库，核心提供协议无关的契约和
 如 gRPC、Redis 和 OpenTelemetry，位于
 [servex-contrib](https://github.com/nostosx/servex-contrib)。
 
-当前版本为 v1.0.0，已发布的 v1 版本保持公开 API 兼容，具体变更见
+当前版本为 v1.1.0，已发布的 v1 版本保持公开 API 兼容，具体变更见
 [CHANGELOG.md](CHANGELOG.md)。可运行的 HTTP 和 gRPC 程序位于独立的
 [servex-examples](https://github.com/nostosx/servex-examples) 项目。
 
@@ -16,11 +16,11 @@ servex 是面向 Go 微服务的工具库，核心提供协议无关的契约和
 需要 Go 1.27.3。在应用模块根目录安装：
 
 ```sh
-go get github.com/nostosx/servex@v1.0.0
+go get github.com/nostosx/servex@v1.1.0
 ```
 
 kitx v1.0.0 从 Go 模块代理解析，无需并排检出仓库或添加本地替换。
-核心标签不带目录前缀，例如 `v1.0.0`。
+核心标签不带目录前缀，例如 `v1.1.0`。
 
 ## 设计原则
 
@@ -40,7 +40,7 @@ kitx v1.0.0 从 Go 模块代理解析，无需并排检出仓库或添加本地�
 
 | 层级 | 包 | 允许依赖 |
 |---|---|---|
-| 基础 | `app`、`endpoint`、`errorx`、`metadata`、`health`、`encoding`、`observability/*` | 仅标准库，彼此不依赖 |
+| 基础 | `app`、`cqrs`、`endpoint`、`errorx`、`metadata`、`health`、`encoding`、`observability/*` | 仅标准库，彼此不依赖 |
 | 契约 | `config`、`selector`、`discovery`、`storage/*`、`messaging/*` | 按包级白名单使用基础能力 |
 | 传输 | `transport` | 基础、契约与 `kitx/backoff` |
 | 实现 | `*/memory`、`config/file`、`transport/httpx` 等 | 自身契约及允许的上层包，不依赖其他实现 |
@@ -50,6 +50,7 @@ kitx v1.0.0 从 Go 模块代理解析，无需并排检出仓库或添加本地�
 | 目录 | 职责 |
 |---|---|
 | `app` | Hook 顺序启动、逆序停止、启动失败回滚、就绪检查和运行失败处理；`SignalContext` 处理 SIGINT/SIGTERM |
+| `cqrs` | 类型化应用 `Handler`、`Command`、`Query` 与显式中间件组合；自 v1.1.0 起提供 |
 | `endpoint` | 协议无关的 `Endpoint`、`Middleware` 和 `Chain` |
 | `errorx` | 结构化错误码、原因、元数据和重试标记，不绑定协议 |
 | `metadata` | 上下文中的请求元数据与调用描述 |
@@ -66,6 +67,37 @@ kitx v1.0.0 从 Go 模块代理解析，无需并排检出仓库或添加本地�
 | `messaging/jobqueue`、`messaging/jobqueue/memory` | 任务契约、延迟/重试/唯一性选项、工作者 Hook 和进程内队列 |
 | `internal/...` | 私有的依赖检查、发现地址选择和消费者生命周期助手 |
 
+## 类型化应用处理器
+
+`cqrs` 自 v1.1.0 起提供。
+业务请求与结果仍放在应用自己的 command/query 包中。
+`Command[Request, Result]`、`Query[Request, Result]` 是嵌入 `Handler` 的接口；
+`CommandFunc`、`QueryFunc` 将函数适配为这些契约，具有对应 `Handle` 方法的结构体同样可以实现。
+命令可以返回业务结果，没有结果载荷时使用 `struct{}`。
+
+例如，在应用构造函数中传入消费方定义的 writer：
+
+```go
+return cqrs.ChainCommand("catalog.create_product", cqrs.CommandFunc[Create, Product](
+    func(ctx context.Context, cmd Create) (Product, error) {
+        return products.Create(ctx, cmd)
+    },
+), middleware...)
+```
+
+`middleware` 类型为 `[]cqrs.CommandMiddleware[Create, Product]`，每个中间件在装配时
+获得独立的 `cqrs.Metadata{Kind, Operation}` 值副本。查询使用 `ChainQuery`；操作名应为
+`catalog.get_product` 这样的稳定常量，不能使用请求 ID 或用户输入，空白名称会在装配时 panic。
+命令与查询中间件共享泛型实现，命名表达意图，不提供读写副作用的编译期隔离。装配时组合一次并复用，
+第一项位于最外层，nil 项会跳过。中间件可以拒绝执行、派生 context 或转换结果与错误。
+nil handler 属于编程错误。完整中间件实现和顺序验证见
+[可执行示例与测试](cqrs/cqrs_test.go)。
+
+处理器同步执行；除非中间件主动变换，否则保持调用方的 context、结果与错误。
+共享状态需要自行保证并发安全。查询的只读边界由应用端口与测试保证，此包不提供副作用约束。
+传输中间件继续使用 `endpoint`，业务中间件使用 `cqrs`，应用内部无需经过 `any` 转换。
+事务和命令幂等仍需显式实现，没有业务幂等保证时不能自动重试写操作。
+
 ## 示例
 
 在新目录中初始化应用模块：
@@ -74,7 +106,7 @@ kitx v1.0.0 从 Go 模块代理解析，无需并排检出仓库或添加本地�
 mkdir servex-demo
 cd servex-demo
 go mod init example.com/servex-demo
-go get github.com/nostosx/servex@v1.0.0
+go get github.com/nostosx/servex@v1.1.0
 mkdir server client
 ```
 

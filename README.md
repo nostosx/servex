@@ -9,7 +9,7 @@ standard library and [kitx](https://github.com/nostosx/kitx). Implementations
 that need third-party SDKs, such as gRPC, Redis and OpenTelemetry, live in
 [servex-contrib](https://github.com/nostosx/servex-contrib).
 
-The current release is v1.0.0. Published v1 releases preserve public API
+The current release is v1.1.0. Published v1 releases preserve public API
 compatibility; see [CHANGELOG.md](CHANGELOG.md).
 
 Runnable HTTP and gRPC programs live in the separate
@@ -20,11 +20,11 @@ Runnable HTTP and gRPC programs live in the separate
 Requires Go 1.27.3. Add servex to your application module:
 
 ```sh
-go get github.com/nostosx/servex@v1.0.0
+go get github.com/nostosx/servex@v1.1.0
 ```
 
 kitx v1.0.0 resolves from the Go module proxy. No sibling checkout or local
-replacement is needed. Core tags have no directory prefix: `v1.0.0`.
+replacement is needed. Core tags have no directory prefix: `v1.1.0`.
 
 ## Design principles
 
@@ -50,7 +50,7 @@ imports and approved kitx packages:
 
 | Layer | Packages | May import |
 |---|---|---|
-| Foundation | `app` `endpoint` `errorx` `metadata` `health` `encoding` `observability/*` | standard library only; not each other |
+| Foundation | `app` `cqrs` `endpoint` `errorx` `metadata` `health` `encoding` `observability/*` | standard library only; not each other |
 | Contracts | `config` `selector` `discovery` `storage/*` `messaging/*` | foundation |
 | Transport | `transport` | foundation, contracts, `kitx/backoff` |
 | Implementations | reference subpackages such as `*/memory`, `config/file`, `transport/httpx` | their contract and the layers above, never another implementation |
@@ -60,6 +60,7 @@ imports and approved kitx packages:
 | Directory | Purpose |
 |---|---|
 | `app` | Lifecycle container. Starts `Hook`s in registration order, stops them in reverse, rolls back a failed start, aggregates readiness (`App.Check`) and stops on runtime failures. `SignalContext` handles SIGINT/SIGTERM. |
+| `cqrs` | Typed application `Handler`, `Command`, `Query` and explicit middleware composition; available since v1.1.0. |
 | `endpoint` | `Endpoint`, `Middleware` and `Chain`: the protocol-agnostic unit of work shared by servers, clients, consumers and workers. |
 | `errorx` | Structured errors: a `Code` mirroring the gRPC codes, a machine-readable reason, metadata and a retryable flag. Knows no protocol. |
 | `metadata` | Request metadata carried in the context: header-like `MD` and the call description `Info` (kind, protocol, operation, header). |
@@ -83,6 +84,44 @@ imports and approved kitx packages:
 | `messaging/jobqueue/memory` | In-process job queue. |
 | `internal/...` | Private dependency checks, discovery address selection and consumer lifecycle helpers. |
 
+## Typed application handlers
+
+`cqrs` is available since v1.1.0. Keep business request/result types in the
+application's command/query packages. `Command[Request, Result]`
+and `Query[Request, Result]` are interfaces embedding `Handler[Request, Result]`.
+`CommandFunc` and `QueryFunc` adapt functions to these contracts.
+Structs with a matching `Handle` method also implement the contract. A command
+may return a business result; use `struct{}` when it has no result payload.
+
+For example, inside an application constructor with a consumer-owned writer:
+
+```go
+return cqrs.ChainCommand("catalog.create_product", cqrs.CommandFunc[Create, Product](
+    func(ctx context.Context, cmd Create) (Product, error) {
+        return products.Create(ctx, cmd)
+    },
+), middleware...)
+```
+
+`middleware` has type `[]cqrs.CommandMiddleware[Create, Product]`. Each wrapper
+receives a value copy of `cqrs.Metadata{Kind, Operation}` at assembly time.
+Use `ChainQuery` for read-only handlers. Operation names must be stable constants
+such as `catalog.get_product`, never request IDs or user input. Empty names panic
+during assembly. Command/query middleware share a generic implementation; their
+names express intent rather than enforce read/write effects. Assemble the chain once
+and reuse it. The first middleware is outermost; nil entries are skipped. It can
+reject work, derive a context or transform results/errors. Nil handlers are
+programming errors. See the executable [example and tests](cqrs/cqrs_test.go)
+for a complete middleware implementation and ordering checks.
+
+Handlers run synchronously and retain the caller's context, result and error
+unless middleware changes them. Shared handler/middleware state must be safe for
+concurrent calls. Queries stay read-only through application ports and tests;
+this package does not enforce effects. Keep transport middleware on `endpoint`
+and business middleware on `cqrs`; no conversion through `any` is required in
+the application. Transactions and command idempotency remain explicit. Do not
+apply automatic retries to writes without an application idempotency guarantee.
+
 ## Example
 
 To try the following service in a new directory, initialize an application module:
@@ -91,7 +130,7 @@ To try the following service in a new directory, initialize an application modul
 mkdir servex-demo
 cd servex-demo
 go mod init example.com/servex-demo
-go get github.com/nostosx/servex@v1.0.0
+go get github.com/nostosx/servex@v1.1.0
 mkdir server client
 ```
 
