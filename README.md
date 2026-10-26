@@ -272,6 +272,21 @@ client:   tracing -> logging -> metrics -> retry -> circuitbreaker -> timeout ->
 consumer: recovery -> tracing -> logging -> metrics -> handler
 ```
 
+HTTP endpoint middleware runs after the request has been routed and its body
+bound. Checks that must reject a request before its body is read, such as
+authentication and rate limiting, and `net/http` instrumentation that should
+also observe 404s, body-limit 413s and binding failures belong in
+`httpx.HTTPMiddleware(...)`. It wraps the whole server handler, including
+`HandleHTTP` routes and health probes; its first entry is outermost.
+
+The HTTP error body carries `retryable`, the effective `errorx` retry flag, so
+an explicit `WithRetryable` survives a service hop; clients that receive a body
+without it fall back to the code's default. A client transport failure is a
+retryable `Unavailable` only when no connection was obtained or the request is
+replayable under `net/http` rules (GET, HEAD, OPTIONS, TRACE, or an
+`Idempotency-Key`/`X-Idempotency-Key` header). Otherwise the request may have
+executed, and the `Unavailable` error is explicitly not retryable.
+
 ## HTTP limits and custom responses
 
 Server options configure the native `http.Server` used by `Start`:
@@ -293,10 +308,11 @@ A zero header limit uses the standard library default. When another
 `http.Server` hosts `srv` as a handler, configure transport settings there.
 Connection timeouts do not impose an endpoint execution deadline.
 
-A positive `MaxBodyBytes` limits the entire body of `Handle` and `Route`
-requests, including multipart framing and routes without a request factory.
-It checks known lengths early and reads any remainder before calling the
-endpoint, using bounded memory. Nonpositive values disable the added limit.
+`MaxBodyBytes` limits the entire body of `Handle` and `Route` requests,
+including multipart framing and routes without a request factory. The default
+is `httpx.DefaultMaxBodyBytes` (4 MiB, the gRPC default message size); raise it
+for larger uploads. It checks known lengths early and reads any remainder before
+calling the endpoint, using bounded memory. Nonpositive values disable the limit.
 Detected overflow returns JSON status 413 with `InvalidArgument` and
 `BODY_TOO_LARGE`; malformed input can return 400 before overflow is detected.
 `HandleHTTP` handlers manage their own body limits. Multipart files remain

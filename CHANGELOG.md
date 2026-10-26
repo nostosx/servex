@@ -3,6 +3,46 @@
 User-visible changes are recorded here. Published v1 releases
 preserve public API compatibility following [semantic versioning](https://semver.org).
 
+## Unreleased
+
+### Added
+
+- `httpx.HTTPMiddleware` wraps the whole server handler with `net/http`
+  middleware. It runs before routing and body binding, so authentication and
+  rate limiting can reject a request before its body is read, and
+  instrumentation observes unmatched routes, 413s and binding failures.
+- `httpx.DefaultMaxBodyBytes` (4 MiB), the default request body limit.
+- HTTP error bodies carry `retryable`, the effective `errorx` retry flag;
+  clients restore it, so an explicit `WithRetryable` survives a service hop.
+
+### Security
+
+- `Handle` and `Route` limit request bodies to `DefaultMaxBodyBytes` by
+  default. Previously bodies were unbounded unless `MaxBodyBytes` was set, so
+  an unauthenticated client could make the server buffer an arbitrarily large
+  body before endpoint middleware ran.
+
+### Fixed
+
+- An httpx client transport failure is retryable only when no connection was
+  obtained or the request is replayable under `net/http` rules (GET, HEAD,
+  OPTIONS, TRACE, or an `Idempotency-Key`/`X-Idempotency-Key` header).
+  Connection failures after a non-idempotent request such as POST may have
+  reached the node, so they are now explicitly non-retryable instead of being
+  retried, possibly executing the request twice.
+
+### Compatibility
+
+- Servers that relied on unbounded bodies must set `MaxBodyBytes` explicitly;
+  a nonpositive value still disables the limit. `HandleHTTP` handlers are
+  unaffected.
+- Error bodies without a `retryable` field, such as those of earlier servers,
+  keep using the code's default retry policy; earlier clients ignore the field.
+- Retrying a non-idempotent request after a mid-exchange connection failure
+  now requires an idempotency key header or a custom retry predicate.
+- Custom `http.RoundTripper`s that do not report `httptrace` connection events
+  are treated as possibly having sent the request.
+
 ## v1.1.0
 
 Release date: 2026-10-25.

@@ -242,6 +242,17 @@ client:   tracing -> logging -> metrics -> retry -> circuitbreaker -> timeout ->
 consumer: recovery -> tracing -> logging -> metrics -> handler
 ```
 
+HTTP 端点中间件在路由匹配并绑定请求体之后执行。需要在读取请求体前拒绝请求的检查
+（如认证和限流），以及需要同时观测 404、请求体超限 413 和绑定失败的 `net/http`
+观测组件，应使用 `httpx.HTTPMiddleware(...)`。它包裹整个服务端 Handler，包括
+`HandleHTTP` 路由和健康探针；首项为最外层。
+
+HTTP 错误响应体携带 `retryable`，即 `errorx` 的实际重试标记，因此显式的
+`WithRetryable` 可以跨服务传递；客户端收到不含该字段的响应体时使用错误码默认值。
+客户端传输失败仅在未取得连接，或请求按 `net/http` 规则可重放（GET、HEAD、OPTIONS、
+TRACE，或带有 `Idempotency-Key`/`X-Idempotency-Key` 请求头）时才是可重试的
+`Unavailable`；否则请求可能已经执行，`Unavailable` 错误被显式标记为不可重试。
+
 ## HTTP 限制与自定义响应
 
 服务端选项配置由 `Start` 使用的原生 `http.Server`：
@@ -261,9 +272,10 @@ srv := httpx.NewServer(
 负数禁用继承；零值请求头大小使用标准库默认值。由其他 `http.Server` 托管 Handler 时，
 应在该服务器上配置传输选项。连接超时不等于处理函数的执行截止时间。
 
-正数 `MaxBodyBytes` 限制 `Handle` 和 `Route` 的完整请求体，包含 multipart 边界
-及没有请求工厂的路由。已知长度可提前拒绝，剩余内容在执行端点前以有界内存读取。
-非正数禁用此限制。检测到超限时返回 HTTP 413 JSON，错误为 `InvalidArgument` 和
+`MaxBodyBytes` 限制 `Handle` 和 `Route` 的完整请求体，包含 multipart 边界
+及没有请求工厂的路由。默认值为 `httpx.DefaultMaxBodyBytes`（4 MiB，与 gRPC 默认消息
+大小一致），上传更大内容时需调高。已知长度可提前拒绝，剩余内容在执行端点前以有界内存
+读取。非正数禁用此限制。检测到超限时返回 HTTP 413 JSON，错误为 `InvalidArgument` 和
 `BODY_TOO_LARGE`；畸形输入可能先返回 400。`HandleHTTP` 处理函数自行控制请求体限制。
 Multipart 文件在端点执行和响应编码后清理。
 
