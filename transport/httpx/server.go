@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"reflect"
+	"slices"
 	"sync"
 	"time"
 
@@ -27,6 +28,11 @@ var (
 	_ transport.Server = (*Server)(nil)
 	_ http.Handler     = (*Server)(nil)
 )
+
+// DefaultMaxBodyBytes is the request body limit for Handle and Route when
+// MaxBodyBytes is not configured. It matches the default maximum message
+// size of gRPC servers.
+const DefaultMaxBodyBytes = 4 << 20
 
 // maxMultipartMemory is the part of a multipart body kept in memory; the
 // rest is stored in temporary files.
@@ -45,6 +51,7 @@ type ServerOption func(*serverOptions)
 type serverOptions struct {
 	addr              string
 	middleware        []endpoint.Middleware
+	httpMiddleware    []func(http.Handler) http.Handler
 	codecs            []encoding.Codec
 	health            health.Checker
 	logger            *slog.Logger
@@ -93,8 +100,9 @@ func MaxHeaderBytes(n int) ServerOption {
 }
 
 // MaxBodyBytes limits request bodies for Handle and Route, including unread
-// body data. Values less than or equal to zero disable the limit, as does
-// the default. HandleHTTP handlers retain control over their request bodies.
+// body data. The default is DefaultMaxBodyBytes; values less than or equal
+// to zero disable the limit. HandleHTTP handlers retain control over their
+// request bodies.
 func MaxBodyBytes(n int64) ServerOption {
 	return func(o *serverOptions) { o.maxBodyBytes = n }
 }
@@ -103,6 +111,19 @@ func MaxBodyBytes(n int64) ServerOption {
 // with Handle or Route, in the order given; m[0] is the outermost layer.
 func Middleware(m ...endpoint.Middleware) ServerOption {
 	return func(o *serverOptions) { o.middleware = append(o.middleware, m...) }
+}
+
+// HTTPMiddleware appends net/http middleware that wraps the whole server
+// handler, in the order given; m[0] is the outermost layer. It runs for
+// every request the server receives, before routing and before the request
+// body is read or bound, so it also observes unmatched routes, binding
+// failures, HandleHTTP handlers and health probes. Use it for checks that
+// must reject a request before its body is consumed, such as authentication
+// or rate limiting, and for net/http instrumentation. Endpoint middleware
+// configured with Middleware still runs inside the matched route, after
+// binding. Nil middleware is skipped.
+func HTTPMiddleware(m ...func(http.Handler) http.Handler) ServerOption {
+	return func(o *serverOptions) { o.httpMiddleware = append(o.httpMiddleware, m...) }
 }
 
 // Codecs appends codecs used to decode request bodies and encode responses.
@@ -154,6 +175,7 @@ type Server struct {
 	codecs            codecs
 	logger            *slog.Logger
 	mux               *http.ServeMux
+	handler           http.Handler
 	errc              chan error
 	readTimeout       time.Duration
 	readHeaderTimeout time.Duration
@@ -173,7 +195,7 @@ type Server struct {
 // NewServer creates a Server. Routes may be registered before or after
 // Start.
 func NewServer(opts ...ServerOption) *Server {
-	o := serverOptions{addr: ":8000", logger: slog.Default()}
+	o := serverOptions{addr: ":8000", logger: slog.Default(), maxBodyBytes: DefaultMaxBodyBytes}
 	for _, opt := range opts {
 		if opt != nil {
 			opt(&o)
@@ -193,6 +215,12 @@ func NewServer(opts ...ServerOption) *Server {
 		maxHeaderBytes:    o.maxHeaderBytes,
 		maxBodyBytes:      o.maxBodyBytes,
 		listen:            new(net.ListenConfig).Listen,
+	}
+	s.handler = s.mux
+	for _, m := range slices.Backward(o.httpMiddleware) {
+		if m != nil {
+			s.handler = m(s.handler)
+		}
 	}
 	if o.health != nil {
 		s.mountHealth(o.health)
@@ -274,13 +302,14 @@ func (s *Server) URL() *url.URL {
 	return s.url.Clone()
 }
 
-// ServeHTTP dispatches the request to the registered routes.
+// ServeHTTP passes the request through the HTTPMiddleware chain and
+// dispatches it to the registered routes.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	s.mux.ServeHTTP(w, r)
+	s.handler.ServeHTTP(w, r)
 }
 
-// HandleHTTP registers a plain http.Handler for pattern. Server middleware
-// is not applied. Like http.ServeMux, it panics on invalid or conflicting
+// HandleHTTP registers a plain http.Handler for pattern. Endpoint middleware
+// configured with Middleware is not applied; HTTPMiddleware is. Like http.ServeMux, it panics on invalid or conflicting
 // patterns.
 func (s *Server) HandleHTTP(pattern string, h http.Handler) {
 	s.mux.Handle(pattern, h)

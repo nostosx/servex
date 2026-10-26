@@ -212,12 +212,42 @@ func TestMaxBodyBytesBindingFailureDoesNotDrain(t *testing.T) {
 	}
 }
 
+func TestDefaultMaxBodyBytes(t *testing.T) {
+	s := httpx.NewServer()
+	s.Handle("POST /", func(context.Context, any) (any, error) { return nil, nil }, nil)
+	for _, tc := range []struct {
+		name   string
+		size   int64
+		hidden bool // hide the length so the limit applies while reading
+		status int
+	}{
+		{name: "at limit", size: httpx.DefaultMaxBodyBytes, status: http.StatusNoContent},
+		{name: "declared over limit", size: httpx.DefaultMaxBodyBytes + 1, status: http.StatusRequestEntityTooLarge},
+		{name: "streamed over limit", size: httpx.DefaultMaxBodyBytes + 1, hidden: true, status: http.StatusRequestEntityTooLarge},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var body io.Reader
+			if tc.hidden {
+				body = io.LimitReader(repeatingLimitReader{}, tc.size)
+			} else {
+				body = bytes.NewReader(bytes.Repeat([]byte{'x'}, int(tc.size)))
+			}
+			w := do(s, httptest.NewRequest(http.MethodPost, "/", body))
+			if w.Code != tc.status {
+				t.Fatalf("status = %d, want %d; body = %s", w.Code, tc.status, w.Body)
+			}
+			if tc.status == http.StatusRequestEntityTooLarge {
+				assertBodyLimitError(t, w)
+			}
+		})
+	}
+}
+
 func TestMaxBodyBytesDisabledAndRawHandlers(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		opts []httpx.ServerOption
 	}{
-		{name: "default"},
 		{name: "zero", opts: []httpx.ServerOption{httpx.MaxBodyBytes(0)}},
 		{name: "negative", opts: []httpx.ServerOption{httpx.MaxBodyBytes(-1)}},
 	} {
