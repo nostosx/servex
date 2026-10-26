@@ -10,8 +10,10 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"net/http/httptrace"
 	"net/url"
 	"strings"
+	"sync/atomic"
 
 	"github.com/nostosx/servex/discovery"
 	"github.com/nostosx/servex/encoding"
@@ -146,10 +148,15 @@ func NewClient(ctx context.Context, target string, opts ...ClientOption) (*Clien
 // A 2xx reply is decoded into the value returned by newReply (an empty body
 // leaves it untouched); a nil newReply discards the body and yields a nil
 // reply. Other statuses yield an *errorx.Error, decoded from the errorx JSON
-// body when present and otherwise derived from the status code. A request
-// that cannot be exchanged with the node at all yields a retryable
-// errorx.Unavailable, unless the failure comes from ctx cancellation or a
-// deadline.
+// body when present and otherwise derived from the status code; the body's
+// retryable flag, when present, overrides the code's default. A request that
+// cannot be exchanged with the node yields errorx.Unavailable, unless the
+// failure comes from ctx cancellation or a deadline. That error is retryable
+// only when the request cannot have reached the node, because the transport
+// failed before obtaining a connection, or when the request is replayable by
+// the net/http rules: GET, HEAD, OPTIONS and TRACE requests and requests
+// carrying an Idempotency-Key or X-Idempotency-Key header. Other requests may
+// already have executed, so their error is explicitly not retryable.
 func (c *Client) Endpoint(method, path string, newReply func() any, mw ...endpoint.Middleware) endpoint.Endpoint {
 	method = strings.ToUpper(method)
 	tmpl := parseTemplate(path)
@@ -203,7 +210,8 @@ func (c *Client) do(ctx context.Context, method string, tmpl template, addr stri
 		body = bytes.NewReader(data)
 	}
 
-	hreq, err := http.NewRequestWithContext(ctx, method, u.String(), body)
+	var progress exchangeProgress
+	hreq, err := http.NewRequestWithContext(httptrace.WithClientTrace(ctx, progress.trace()), method, u.String(), body)
 	if err != nil {
 		return nil, fmt.Errorf("httpx: build request: %w", err)
 	}
@@ -223,7 +231,7 @@ func (c *Client) do(ctx context.Context, method string, tmpl template, addr stri
 
 	resp, err := c.hc.Do(hreq)
 	if err != nil {
-		return nil, transportError(method, u, err)
+		return nil, transportError(method, u, err, progress.unsent() || replayable(hreq))
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
@@ -264,7 +272,11 @@ func decodeError(resp *http.Response) error {
 	var body errorBody
 	if json.Unmarshal(data, &body) == nil {
 		if code, ok := errorx.ParseCode(body.Code); ok && code != errorx.OK {
-			return errorx.New(code, body.Reason, body.Message).WithMetadata(body.Metadata)
+			e := errorx.New(code, body.Reason, body.Message).WithMetadata(body.Metadata)
+			if body.Retryable != nil {
+				e = e.WithRetryable(*body.Retryable)
+			}
+			return e
 		}
 	}
 	msg := resp.Status
@@ -280,15 +292,55 @@ func decodeError(resp *http.Response) error {
 // transportError classifies a failure to exchange a request with a node.
 // Cancellation and deadline errors keep their context error in the chain,
 // so errorx.From reports Canceled or DeadlineExceeded. Every other failure
-// (refused connection, reset, TLS or protocol error) becomes a retryable
-// errorx.Unavailable whose cause is the original error, so that retry
-// middleware can move on to another node.
-func transportError(method string, u *url.URL, err error) error {
+// (refused connection, reset, TLS or protocol error) becomes an
+// errorx.Unavailable whose cause is the original error. It is retryable, so
+// that retry middleware can move on to another node, only when retrySafe
+// reports that repeating the request cannot execute it twice.
+func transportError(method string, u *url.URL, err error, retrySafe bool) error {
 	err = fmt.Errorf("httpx: %s %s: %w", method, u.Redacted(), err)
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return err
 	}
-	return errorx.New(errorx.Unavailable, "", "node unavailable").WithCause(err)
+	if retrySafe {
+		return errorx.New(errorx.Unavailable, "", "node unavailable").WithCause(err)
+	}
+	return errorx.New(errorx.Unavailable, "", "node unavailable after the request may have been sent").
+		WithCause(err).WithRetryable(false)
+}
+
+// exchangeProgress records how far the transport got with a request.
+type exchangeProgress struct {
+	getConn atomic.Bool
+	gotConn atomic.Bool
+}
+
+// trace returns the client trace that feeds p.
+func (p *exchangeProgress) trace() *httptrace.ClientTrace {
+	return &httptrace.ClientTrace{
+		GetConn: func(string) { p.getConn.Store(true) },
+		GotConn: func(httptrace.GotConnInfo) { p.gotConn.Store(true) },
+	}
+}
+
+// unsent reports whether the transport started acquiring a connection but
+// never obtained one, so no part of the request reached the node. A
+// transport that does not report connection events is never treated as
+// unsent.
+func (p *exchangeProgress) unsent() bool {
+	return p.getConn.Load() && !p.gotConn.Load()
+}
+
+// replayable reports whether r may be sent again after a failure that
+// happened once it may have reached the node, following net/http's rules for
+// retrying requests on a broken connection.
+func replayable(r *http.Request) bool {
+	switch r.Method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions, http.MethodTrace:
+		return true
+	}
+	_, key := r.Header["Idempotency-Key"]
+	_, xKey := r.Header["X-Idempotency-Key"]
+	return key || xKey
 }
 
 // usesQuery reports whether requests of method carry their fields in the

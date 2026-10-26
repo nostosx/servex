@@ -518,13 +518,15 @@ func (s *Server) writeError(w http.ResponseWriter, r *http.Request, operation st
 			"operation", operation, "status", status, "error", err)
 	}
 	data, merr := encoding.JSON.Marshal(errorBody{
-		Code:     e.Code.String(),
-		Reason:   e.Reason,
-		Message:  e.Message,
-		Metadata: e.Metadata,
+		Code:      e.Code.String(),
+		Reason:    e.Reason,
+		Message:   e.Message,
+		Metadata:  e.Metadata,
+		Retryable: new(e.Retryable()),
 	})
 	if merr != nil {
-		// errorBody contains only strings, so this cannot happen in practice.
+		// errorBody contains only strings and a bool, so this cannot happen
+		// in practice.
 		http.Error(w, http.StatusText(status), status)
 		return
 	}
