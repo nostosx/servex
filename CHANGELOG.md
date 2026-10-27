@@ -5,7 +5,7 @@ preserve public API compatibility following [semantic versioning](https://semver
 
 ## v1.1.1
 
-Release date: not yet tagged.
+Release date: 2026-10-27.
 
 ### Added
 

@@ -9,7 +9,7 @@ standard library and [kitx](https://github.com/nostosx/kitx). Implementations
 that need third-party SDKs, such as gRPC, Redis and OpenTelemetry, live in
 [servex-contrib](https://github.com/nostosx/servex-contrib).
 
-The current release is v1.1.0. Published v1 releases preserve public API
+The current release is v1.1.1. Published v1 releases preserve public API
 compatibility; see [CHANGELOG.md](CHANGELOG.md).
 
 Runnable HTTP and gRPC programs live in the separate
@@ -20,11 +20,11 @@ Runnable HTTP and gRPC programs live in the separate
 Requires Go 1.27.3. Add servex to your application module:
 
 ```sh
-go get github.com/nostosx/servex@v1.1.0
+go get github.com/nostosx/servex@v1.1.1
 ```
 
 kitx v1.0.0 resolves from the Go module proxy. No sibling checkout or local
-replacement is needed. Core tags have no directory prefix: `v1.1.0`.
+replacement is needed. Core tags have no directory prefix: `v1.1.1`.
 
 ## Design principles
 
@@ -130,7 +130,7 @@ To try the following service in a new directory, initialize an application modul
 mkdir servex-demo
 cd servex-demo
 go mod init example.com/servex-demo
-go get github.com/nostosx/servex@v1.1.0
+go get github.com/nostosx/servex@v1.1.1
 mkdir server client
 ```
 
