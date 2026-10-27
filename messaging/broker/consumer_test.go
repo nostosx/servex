@@ -41,7 +41,7 @@ func nopHandler(context.Context, any) (any, error) { return nil, nil }
 
 func TestConsumerName(t *testing.T) {
 	h := broker.NewConsumer(blockUntilDone(nil), "orders", "g", nopHandler)
-	if got, want := h.Name(), "consumer:orders"; got != want {
+	if got, want := h.Name(), "consumer:orders:g"; got != want {
 		t.Fatalf("Name() = %q, want %q", got, want)
 	}
 	if _, ok := h.(errReporter); !ok {

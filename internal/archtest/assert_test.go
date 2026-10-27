@@ -42,6 +42,10 @@ var (
 	_ broker.Subscriber    = (*brokermemory.Broker)(nil)
 	_ jobqueue.Enqueuer    = (*jobqueuememory.Queue)(nil)
 	_ jobqueue.Runner      = (*jobqueuememory.Queue)(nil)
+
+	// Both in-memory implementations opt in to start readiness.
+	_ broker.ReadySubscriber = (*brokermemory.Broker)(nil)
+	_ jobqueue.ReadyRunner   = (*jobqueuememory.Queue)(nil)
 )
 
 // The HTTP server is a transport.Server, an http.Handler, reports runtime
@@ -61,17 +65,34 @@ func TestOptionalHookMethods(t *testing.T) {
 	type checker interface {
 		Check(ctx context.Context) error
 	}
+	type drainer interface {
+		Drain(ctx context.Context) error
+	}
 
 	db := sql.OpenDB(nopConnector{})
 	t.Cleanup(func() { db.Close() })
 	if _, ok := database.Hook("db", db).(checker); !ok {
 		t.Error("database.Hook does not implement Check")
 	}
-	if _, ok := broker.NewConsumer(brokermemory.New(), "t", "", nopEndpoint).(errReporter); !ok {
+	if _, ok := database.Hook("db", db, database.WithReadiness(false)).(checker); ok {
+		t.Error("database.Hook implements Check with readiness disabled")
+	}
+	consumer := broker.NewConsumer(brokermemory.New(), "t", "", nopEndpoint)
+	if _, ok := consumer.(errReporter); !ok {
 		t.Error("broker.NewConsumer does not implement Err")
 	}
-	if _, ok := jobqueue.NewWorker(jobqueuememory.New(), nil).(errReporter); !ok {
+	if _, ok := consumer.(checker); !ok {
+		t.Error("broker.NewConsumer does not implement Check")
+	}
+	worker := jobqueue.NewWorker(jobqueuememory.New(), nil)
+	if _, ok := worker.(errReporter); !ok {
 		t.Error("jobqueue.NewWorker does not implement Err")
+	}
+	if _, ok := worker.(checker); !ok {
+		t.Error("jobqueue.NewWorker does not implement Check")
+	}
+	if _, ok := discovery.Registration(discoverymemory.New(), discovery.Instance{Name: "svc"}).(drainer); !ok {
+		t.Error("discovery.Registration does not implement Drain")
 	}
 	if _, ok := app.Hook(httpx.NewServer()).(errReporter); !ok {
 		t.Error("httpx.Server does not implement Err")

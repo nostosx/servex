@@ -15,19 +15,19 @@ func TestApplyOptions(t *testing.T) {
 	}{
 		{"defaults", nil, jobqueue.EnqueueOptions{MaxRetry: 3}},
 		{"nil option skipped", []jobqueue.EnqueueOption{nil}, jobqueue.EnqueueOptions{MaxRetry: 3}},
-		{"delay", []jobqueue.EnqueueOption{jobqueue.Delay(time.Minute)},
+		{"delay", []jobqueue.EnqueueOption{jobqueue.WithDelay(time.Minute)},
 			jobqueue.EnqueueOptions{Delay: time.Minute, MaxRetry: 3}},
-		{"negative delay", []jobqueue.EnqueueOption{jobqueue.Delay(-time.Second)},
+		{"negative delay", []jobqueue.EnqueueOption{jobqueue.WithDelay(-time.Second)},
 			jobqueue.EnqueueOptions{MaxRetry: 3}},
-		{"max retry", []jobqueue.EnqueueOption{jobqueue.MaxRetry(7)}, jobqueue.EnqueueOptions{MaxRetry: 7}},
-		{"zero max retry", []jobqueue.EnqueueOption{jobqueue.MaxRetry(0)}, jobqueue.EnqueueOptions{}},
-		{"negative max retry", []jobqueue.EnqueueOption{jobqueue.MaxRetry(-1)}, jobqueue.EnqueueOptions{}},
-		{"unique", []jobqueue.EnqueueOption{jobqueue.Unique("k", time.Hour)},
+		{"max retry", []jobqueue.EnqueueOption{jobqueue.WithMaxRetry(7)}, jobqueue.EnqueueOptions{MaxRetry: 7}},
+		{"zero max retry", []jobqueue.EnqueueOption{jobqueue.WithMaxRetry(0)}, jobqueue.EnqueueOptions{}},
+		{"negative max retry", []jobqueue.EnqueueOption{jobqueue.WithMaxRetry(-1)}, jobqueue.EnqueueOptions{}},
+		{"unique", []jobqueue.EnqueueOption{jobqueue.WithUnique("k", time.Hour)},
 			jobqueue.EnqueueOptions{MaxRetry: 3, UniqueKey: "k", UniqueTTL: time.Hour}},
-		{"later options win", []jobqueue.EnqueueOption{jobqueue.MaxRetry(1), jobqueue.MaxRetry(5)},
+		{"later options win", []jobqueue.EnqueueOption{jobqueue.WithMaxRetry(1), jobqueue.WithMaxRetry(5)},
 			jobqueue.EnqueueOptions{MaxRetry: 5}},
 		{"all", []jobqueue.EnqueueOption{
-			jobqueue.Delay(time.Second), jobqueue.MaxRetry(2), jobqueue.Unique("u", time.Minute),
+			jobqueue.WithDelay(time.Second), jobqueue.WithMaxRetry(2), jobqueue.WithUnique("u", time.Minute),
 		}, jobqueue.EnqueueOptions{Delay: time.Second, MaxRetry: 2, UniqueKey: "u", UniqueTTL: time.Minute}},
 	}
 	for _, tt := range tests {

@@ -15,8 +15,8 @@ import (
 // errClosed is returned by Publish once the Broker is closed.
 var errClosed = errors.New("memory: broker is closed")
 
-// Broker is an in-memory implementation of broker.Publisher and
-// broker.Subscriber. Its methods are safe for concurrent use. The zero value
+// Broker is an in-memory implementation of broker.Publisher,
+// broker.Subscriber and broker.ReadySubscriber. Its methods are safe for concurrent use. The zero value
 // is not usable; create one with New.
 //
 // A message rejected with a retryable error is redelivered to the same
@@ -121,6 +121,15 @@ func (b *Broker) Publish(ctx context.Context, msg *broker.Message) error {
 // Broker is already closed. The context passed to h is canceled when ctx ends
 // or the Broker is closed.
 func (b *Broker) Subscribe(ctx context.Context, topic, group string, h endpoint.Endpoint) error {
+	return b.SubscribeReady(ctx, topic, group, h, nil)
+}
+
+// SubscribeReady behaves like Subscribe and implements
+// broker.ReadySubscriber: it calls ready once the subscriber has joined
+// topic, so messages published afterwards reach it. A nil ready is allowed.
+// It returns without calling ready when the arguments are invalid or the
+// Broker is closed.
+func (b *Broker) SubscribeReady(ctx context.Context, topic, group string, h endpoint.Endpoint, ready func()) error {
 	switch {
 	case topic == "":
 		return errors.New("memory: subscribe: empty topic")
@@ -139,6 +148,9 @@ func (b *Broker) Subscribe(ctx context.Context, topic, group string, h endpoint.
 	}
 	if !b.join(topic, s) {
 		return nil
+	}
+	if ready != nil {
+		ready()
 	}
 	for ctx.Err() == nil {
 		select {

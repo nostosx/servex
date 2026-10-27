@@ -41,3 +41,15 @@ type Subscriber interface {
 	// message (broadcast).
 	Subscribe(ctx context.Context, topic, group string, h endpoint.Endpoint) error
 }
+
+// ReadySubscriber is an optional extension of Subscriber for subscriptions
+// whose setup takes time, such as joining a consumer group. NewConsumer uses
+// it when available, so that the consumer hook's Start returns only once
+// the subscription is established.
+type ReadySubscriber interface {
+	Subscriber
+	// SubscribeReady behaves like Subscribe and calls the non-nil ready, at
+	// most once, as soon as the subscription receives messages. Returning
+	// without calling ready means the subscription failed to start.
+	SubscribeReady(ctx context.Context, topic, group string, h endpoint.Endpoint, ready func()) error
+}

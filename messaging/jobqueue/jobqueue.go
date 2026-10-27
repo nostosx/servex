@@ -10,7 +10,7 @@ import (
 )
 
 // defaultMaxRetry is the number of retries applied by ApplyOptions when no
-// MaxRetry option is given.
+// WithMaxRetry option is given.
 const defaultMaxRetry = 3
 
 // Job is a unit of background work.
@@ -45,21 +45,21 @@ type EnqueueOptions struct {
 // EnqueueOption sets a field of EnqueueOptions.
 type EnqueueOption func(*EnqueueOptions)
 
-// Delay postpones the first attempt of the job by d. Values <= 0 mean no
+// WithDelay postpones the first attempt of the job by d. Values <= 0 mean no
 // delay.
-func Delay(d time.Duration) EnqueueOption {
+func WithDelay(d time.Duration) EnqueueOption {
 	return func(o *EnqueueOptions) { o.Delay = d }
 }
 
-// MaxRetry sets how many times a job failing with a retryable error is
+// WithMaxRetry sets how many times a job failing with a retryable error is
 // retried. Negative values are treated as 0.
-func MaxRetry(n int) EnqueueOption {
+func WithMaxRetry(n int) EnqueueOption {
 	return func(o *EnqueueOptions) { o.MaxRetry = n }
 }
 
-// Unique reserves key for ttl: enqueueing another job with the same key
+// WithUnique reserves key for ttl: enqueueing another job with the same key
 // before the reservation ends returns ErrDuplicate.
-func Unique(key string, ttl time.Duration) EnqueueOption {
+func WithUnique(key string, ttl time.Duration) EnqueueOption {
 	return func(o *EnqueueOptions) {
 		o.UniqueKey = key
 		o.UniqueTTL = ttl
@@ -100,4 +100,16 @@ type Runner interface {
 	// job; a retryable error retries it with backoff up to MaxRetry times; a
 	// non-retryable error fails it immediately.
 	Run(ctx context.Context, handlers map[string]endpoint.Endpoint) error
+}
+
+// ReadyRunner is an optional extension of Runner for runners whose setup
+// takes time, such as connecting to a server. NewWorker uses it when
+// available, so that the worker hook's Start returns only once jobs are
+// being processed.
+type ReadyRunner interface {
+	Runner
+	// RunReady behaves like Run and calls the non-nil ready, at most once,
+	// as soon as it processes jobs. Returning without calling ready means the
+	// runner failed to start.
+	RunReady(ctx context.Context, handlers map[string]endpoint.Endpoint, ready func()) error
 }

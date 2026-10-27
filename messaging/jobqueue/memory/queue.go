@@ -23,8 +23,8 @@ var (
 	errRunning = errors.New("memory: queue is already running")
 )
 
-// Queue is an in-memory implementation of jobqueue.Enqueuer and
-// jobqueue.Runner. Its methods are safe for concurrent use. The zero value is
+// Queue is an in-memory implementation of jobqueue.Enqueuer,
+// jobqueue.Runner and jobqueue.ReadyRunner. Its methods are safe for concurrent use. The zero value is
 // not usable; create one with New.
 //
 // Only one Run may be active at a time. A job whose handler is interrupted
@@ -140,6 +140,13 @@ func (q *Queue) Enqueue(ctx context.Context, job *jobqueue.Job, opts ...jobqueue
 // context that is canceled when Run stops. A job whose Type has no handler
 // fails immediately. Run returns an error if another Run is active.
 func (q *Queue) Run(ctx context.Context, handlers map[string]endpoint.Endpoint) error {
+	return q.RunReady(ctx, handlers, nil)
+}
+
+// RunReady behaves like Run and implements jobqueue.ReadyRunner: it calls
+// ready once its workers are processing jobs. A nil ready is allowed. It
+// returns errRunning without calling ready while another Run is active.
+func (q *Queue) RunReady(ctx context.Context, handlers map[string]endpoint.Endpoint, ready func()) error {
 	q.mu.Lock()
 	if q.running {
 		q.mu.Unlock()
@@ -170,6 +177,9 @@ func (q *Queue) Run(ctx context.Context, handlers map[string]endpoint.Endpoint) 
 				q.process(ctx, handlers, e)
 			}
 		})
+	}
+	if ready != nil {
+		ready()
 	}
 	wg.Wait()
 	return nil

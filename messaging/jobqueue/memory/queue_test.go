@@ -237,9 +237,9 @@ func TestDelay(t *testing.T) {
 				return nil, nil
 			},
 		})
-		enqueue(t, q, &jobqueue.Job{Type: "job", Payload: []byte("late")}, jobqueue.Delay(5*time.Second))
-		enqueue(t, q, &jobqueue.Job{Type: "job", Payload: []byte("soon")}, jobqueue.Delay(2*time.Second))
-		enqueue(t, q, &jobqueue.Job{Type: "job", Payload: []byte("same")}, jobqueue.Delay(2*time.Second))
+		enqueue(t, q, &jobqueue.Job{Type: "job", Payload: []byte("late")}, jobqueue.WithDelay(5*time.Second))
+		enqueue(t, q, &jobqueue.Job{Type: "job", Payload: []byte("soon")}, jobqueue.WithDelay(2*time.Second))
+		enqueue(t, q, &jobqueue.Job{Type: "job", Payload: []byte("same")}, jobqueue.WithDelay(2*time.Second))
 		enqueue(t, q, &jobqueue.Job{Type: "job", Payload: []byte("now")})
 
 		synctest.Wait()
@@ -277,10 +277,10 @@ func TestDelayedJobEnqueuedWhileWaiting(t *testing.T) {
 			},
 		})
 		start := time.Now()
-		enqueue(t, q, &jobqueue.Job{Type: "job", Payload: []byte("10s")}, jobqueue.Delay(10*time.Second))
+		enqueue(t, q, &jobqueue.Job{Type: "job", Payload: []byte("10s")}, jobqueue.WithDelay(10*time.Second))
 		synctest.Sleep(time.Second)
 		// An earlier deadline arriving while the worker waits is honoured.
-		enqueue(t, q, &jobqueue.Job{Type: "job", Payload: []byte("3s")}, jobqueue.Delay(2*time.Second))
+		enqueue(t, q, &jobqueue.Job{Type: "job", Payload: []byte("3s")}, jobqueue.WithDelay(2*time.Second))
 		if got := <-ran; got != "3s" || time.Since(start) != 3*time.Second {
 			t.Fatalf("first job %q at %v, want 3s at 3s", got, time.Since(start))
 		}
@@ -313,7 +313,7 @@ func TestRetries(t *testing.T) {
 		},
 		{
 			name: "custom backoff and max retry", opts: []Option{linear},
-			enqueue: []jobqueue.EnqueueOption{jobqueue.MaxRetry(2)}, failures: 100, err: errUnavailable,
+			enqueue: []jobqueue.EnqueueOption{jobqueue.WithMaxRetry(2)}, failures: 100, err: errUnavailable,
 			wantAttempts: []int{1, 2, 3},
 			wantTimes:    []time.Duration{0, time.Second, 3 * time.Second},
 			wantFailed:   true,
@@ -324,7 +324,7 @@ func TestRetries(t *testing.T) {
 			wantTimes:    []time.Duration{0, time.Second, 3 * time.Second},
 		},
 		{
-			name: "no retries", enqueue: []jobqueue.EnqueueOption{jobqueue.MaxRetry(0)}, failures: 100, err: errUnavailable,
+			name: "no retries", enqueue: []jobqueue.EnqueueOption{jobqueue.WithMaxRetry(0)}, failures: 100, err: errUnavailable,
 			wantAttempts: []int{1}, wantTimes: []time.Duration{0}, wantFailed: true,
 		},
 		{
@@ -336,13 +336,13 @@ func TestRetries(t *testing.T) {
 			wantAttempts: []int{1}, wantTimes: []time.Duration{0}, wantFailed: true,
 		},
 		{
-			name: "wrapped retryable", opts: []Option{linear}, enqueue: []jobqueue.EnqueueOption{jobqueue.MaxRetry(1)},
+			name: "wrapped retryable", opts: []Option{linear}, enqueue: []jobqueue.EnqueueOption{jobqueue.WithMaxRetry(1)},
 			failures: 100, err: fmt.Errorf("call: %w", errUnavailable),
 			wantAttempts: []int{1, 2}, wantTimes: []time.Duration{0, time.Second}, wantFailed: true,
 		},
 		{
 			name: "negative backoff retries at once", opts: []Option{WithBackoff(func(int) time.Duration { return -time.Second })},
-			enqueue: []jobqueue.EnqueueOption{jobqueue.MaxRetry(1)}, failures: 100, err: errUnavailable,
+			enqueue: []jobqueue.EnqueueOption{jobqueue.WithMaxRetry(1)}, failures: 100, err: errUnavailable,
 			wantAttempts: []int{1, 2}, wantTimes: []time.Duration{0, 0}, wantFailed: true,
 		},
 	}
@@ -463,17 +463,17 @@ func TestUnique(t *testing.T) {
 		q := New()
 		defer q.Close()
 		ttl := time.Minute
-		enqueue(t, q, &jobqueue.Job{Type: "x"}, jobqueue.Unique("k", ttl))
-		enqueue(t, q, &jobqueue.Job{Type: "x"}, jobqueue.Unique("other", ttl))
+		enqueue(t, q, &jobqueue.Job{Type: "x"}, jobqueue.WithUnique("k", ttl))
+		enqueue(t, q, &jobqueue.Job{Type: "x"}, jobqueue.WithUnique("other", ttl))
 		enqueue(t, q, &jobqueue.Job{Type: "x"}) // no key, never a duplicate
 
 		time.Sleep(ttl - time.Nanosecond)
-		_, err := q.Enqueue(t.Context(), &jobqueue.Job{Type: "x"}, jobqueue.Unique("k", ttl))
+		_, err := q.Enqueue(t.Context(), &jobqueue.Job{Type: "x"}, jobqueue.WithUnique("k", ttl))
 		if !errors.Is(err, jobqueue.ErrDuplicate) {
 			t.Fatalf("Enqueue() within TTL = %v, want ErrDuplicate", err)
 		}
 		time.Sleep(time.Nanosecond)
-		enqueue(t, q, &jobqueue.Job{Type: "x"}, jobqueue.Unique("k", ttl))
+		enqueue(t, q, &jobqueue.Job{Type: "x"}, jobqueue.WithUnique("k", ttl))
 	})
 }
 
@@ -498,14 +498,14 @@ func TestUniqueWithoutTTLLastsUntilFinished(t *testing.T) {
 						return nil, tt.err
 					},
 				})
-				enqueue(t, q, &jobqueue.Job{Type: "x"}, jobqueue.Unique("k", 0))
+				enqueue(t, q, &jobqueue.Job{Type: "x"}, jobqueue.WithUnique("k", 0))
 				time.Sleep(time.Hour)
-				if _, err := q.Enqueue(t.Context(), &jobqueue.Job{Type: "x"}, jobqueue.Unique("k", 0)); !errors.Is(err, jobqueue.ErrDuplicate) {
+				if _, err := q.Enqueue(t.Context(), &jobqueue.Job{Type: "x"}, jobqueue.WithUnique("k", 0)); !errors.Is(err, jobqueue.ErrDuplicate) {
 					t.Fatalf("Enqueue() while running = %v, want ErrDuplicate", err)
 				}
 				unblock()
 				synctest.Wait()
-				enqueue(t, q, &jobqueue.Job{Type: "x"}, jobqueue.Unique("k", 0))
+				enqueue(t, q, &jobqueue.Job{Type: "x"}, jobqueue.WithUnique("k", 0))
 				synctest.Wait()
 				if err := stop(); err != nil {
 					t.Errorf("Run() = %v, want nil", err)
@@ -554,22 +554,22 @@ func TestExpiredUniqueLeaseCannotReleaseNewReservation(t *testing.T) {
 						t.Errorf("Run() = %v", err)
 					}
 				}()
-				enqueue(t, q, &jobqueue.Job{ID: "same-id", Type: "x", Payload: []byte("old")}, jobqueue.Unique("k", time.Second))
+				enqueue(t, q, &jobqueue.Job{ID: "same-id", Type: "x", Payload: []byte("old")}, jobqueue.WithUnique("k", time.Second))
 				if got := <-started; got != "old" {
 					t.Fatalf("first job = %q", got)
 				}
 				synctest.Sleep(time.Second)
-				enqueue(t, q, &jobqueue.Job{ID: "same-id", Type: "x", Payload: []byte("new")}, jobqueue.Unique("k", 0))
+				enqueue(t, q, &jobqueue.Job{ID: "same-id", Type: "x", Payload: []byte("new")}, jobqueue.WithUnique("k", 0))
 				close(oldRelease)
 				if got := <-started; got != "new" {
 					t.Fatalf("second job = %q", got)
 				}
-				if _, err := q.Enqueue(t.Context(), &jobqueue.Job{Type: "x"}, jobqueue.Unique("k", 0)); !errors.Is(err, jobqueue.ErrDuplicate) {
+				if _, err := q.Enqueue(t.Context(), &jobqueue.Job{Type: "x"}, jobqueue.WithUnique("k", 0)); !errors.Is(err, jobqueue.ErrDuplicate) {
 					t.Fatalf("Enqueue() while new reservation is running = %v, want ErrDuplicate", err)
 				}
 				close(newRelease)
 				synctest.Wait()
-				enqueue(t, q, &jobqueue.Job{Type: "x"}, jobqueue.Unique("k", 0))
+				enqueue(t, q, &jobqueue.Job{Type: "x"}, jobqueue.WithUnique("k", 0))
 				synctest.Wait()
 			})
 		})
@@ -591,16 +591,16 @@ func TestWithClock(t *testing.T) {
 	}
 	q := New(WithClock(clock))
 	defer q.Close()
-	enqueue(t, q, &jobqueue.Job{Type: "x"}, jobqueue.Unique("k", time.Hour))
+	enqueue(t, q, &jobqueue.Job{Type: "x"}, jobqueue.WithUnique("k", time.Hour))
 	advance(59 * time.Minute)
-	if _, err := q.Enqueue(t.Context(), &jobqueue.Job{Type: "x"}, jobqueue.Unique("k", time.Hour)); !errors.Is(err, jobqueue.ErrDuplicate) {
+	if _, err := q.Enqueue(t.Context(), &jobqueue.Job{Type: "x"}, jobqueue.WithUnique("k", time.Hour)); !errors.Is(err, jobqueue.ErrDuplicate) {
 		t.Fatalf("Enqueue() = %v, want ErrDuplicate", err)
 	}
 	advance(time.Minute)
-	enqueue(t, q, &jobqueue.Job{Type: "x"}, jobqueue.Unique("k", time.Hour))
+	enqueue(t, q, &jobqueue.Job{Type: "x"}, jobqueue.WithUnique("k", time.Hour))
 
 	// Delayed jobs are scheduled against the configured clock.
-	enqueue(t, q, &jobqueue.Job{Type: "x"}, jobqueue.Delay(time.Minute))
+	enqueue(t, q, &jobqueue.Job{Type: "x"}, jobqueue.WithDelay(time.Minute))
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	if len(q.delayed) != 1 || !q.delayed[0].runAt.Equal(clock().Add(time.Minute)) {
@@ -623,7 +623,7 @@ func TestClose(t *testing.T) {
 			})
 		}()
 		enqueue(t, q, &jobqueue.Job{Type: "x"})
-		enqueue(t, q, &jobqueue.Job{Type: "x"}, jobqueue.Delay(time.Hour))
+		enqueue(t, q, &jobqueue.Job{Type: "x"}, jobqueue.WithDelay(time.Hour))
 		synctest.Wait()
 		if err := q.Close(); err != nil {
 			t.Fatalf("Close() = %v", err)
@@ -759,7 +759,7 @@ func TestConcurrentEnqueue(t *testing.T) {
 				for i := range perProducer {
 					var opts []jobqueue.EnqueueOption
 					if i%3 == 0 {
-						opts = append(opts, jobqueue.Delay(time.Duration(i)*time.Millisecond))
+						opts = append(opts, jobqueue.WithDelay(time.Duration(i)*time.Millisecond))
 					}
 					if _, err := q.Enqueue(t.Context(), &jobqueue.Job{Type: "x"}, opts...); err != nil {
 						t.Errorf("Enqueue() = %v", err)
