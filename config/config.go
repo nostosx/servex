@@ -31,7 +31,7 @@ type Watchable interface {
 // Config: validation runs while reloads are serialized.
 type Validator func(context.Context, *Snapshot) error
 
-// Option configures a Config constructed by NewWithOptions.
+// Option configures a Config constructed by New.
 type Option func(*options)
 
 type options struct {
@@ -61,17 +61,11 @@ type Config struct {
 
 // New loads every source in order and deep-merges the results: later sources
 // override earlier ones, maps are merged recursively and every other value
-// is replaced as a whole.
-func New(ctx context.Context, sources ...Source) (*Config, error) {
-	return NewWithOptions(ctx, sources)
-}
-
-// NewWithOptions loads and merges sources as New does, applying opts before
-// the initial load. Validators see the final merged tree, so later sources
-// may repair values from earlier sources. It returns nil if loading or
-// validation fails or ctx is canceled before publication. Nil options are
-// ignored.
-func NewWithOptions(ctx context.Context, sources []Source, opts ...Option) (*Config, error) {
+// is replaced as a whole. opts apply before the initial load; validators see
+// the final merged tree, so later sources may repair values from earlier
+// sources. New returns nil if loading or validation fails or ctx is canceled
+// before publication. Nil options are ignored.
+func New(ctx context.Context, sources []Source, opts ...Option) (*Config, error) {
 	for i, s := range sources {
 		if s == nil {
 			return nil, fmt.Errorf("config: source %d is nil", i)
@@ -191,7 +185,7 @@ func (c *Config) Unmarshal(prefix string, dst any) error {
 	return c.Snapshot().Unmarshal(prefix, dst)
 }
 
-// WatchOption configures a WatchWithOptions call.
+// WatchOption configures a Watch call.
 type WatchOption func(*watchOptions)
 
 type watchOptions struct {
@@ -202,28 +196,26 @@ type watchOptions struct {
 // The callback runs synchronously, outside the reload lock, and may call
 // Reload. It should return promptly so watching can continue. A nil callback
 // disables reporting; the last option wins. Shutdown cancellation is not
-// reported. Terminal source watcher errors are returned by WatchWithOptions.
+// reported. Terminal source watcher errors are returned by Watch.
 func WithReloadErrorHandler(fn func(error)) WatchOption {
 	return func(o *watchOptions) { o.onReloadError = fn }
 }
 
 // Watch runs Watch on every Watchable source. After a change it reloads the
 // configuration and then calls fn with c; a failed reload keeps the previous
-// values and skips fn until the next change. Bursts of changes are
-// coalesced and callbacks do not overlap within one Watch call. Watch blocks
-// until ctx is done and then returns nil; if a source stops watching with an
-// error before that, Watch stops the others and returns the error. It waits
-// for all source watchers to return, so they must honor cancellation.
-func (c *Config) Watch(ctx context.Context, fn func(*Config)) error {
-	return c.WatchWithOptions(ctx, fn)
-}
-
-// WatchWithOptions behaves as Watch with optional reload error reporting.
-// Both fn and the error handler run synchronously outside the reload lock;
-// they may call Reload. fn receives c itself, so manual concurrent reloads
-// may advance its values before fn reads them. Pin a Snapshot for consistent
-// reads within a callback. Nil options are ignored.
-func (c *Config) WatchWithOptions(ctx context.Context, fn func(*Config), opts ...WatchOption) error {
+// values, skips fn until the next change and is reported to the handler set
+// by WithReloadErrorHandler, if any. Bursts of changes are coalesced and
+// callbacks do not overlap within one Watch call. Both fn and the error
+// handler run synchronously outside the reload lock; they may call Reload.
+// fn receives c itself, so manual concurrent reloads may advance its values
+// before fn reads them. Pin a Snapshot for consistent reads within a
+// callback. Nil options are ignored.
+//
+// Watch blocks until ctx is done and then returns nil; if a source stops
+// watching with an error before that, Watch stops the others and returns the
+// error. It waits for all source watchers to return, so they must honor
+// cancellation.
+func (c *Config) Watch(ctx context.Context, fn func(*Config), opts ...WatchOption) error {
 	var o watchOptions
 	for _, opt := range opts {
 		if opt != nil {

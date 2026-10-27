@@ -56,7 +56,7 @@ func (s *watchSource) Watch(ctx context.Context, notify func()) error {
 
 func mustNew(t *testing.T, sources ...config.Source) *config.Config {
 	t.Helper()
-	c, err := config.New(t.Context(), sources...)
+	c, err := config.New(t.Context(), sources)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -69,11 +69,11 @@ type sourceFunc func(context.Context) (map[string]any, error)
 
 func (f sourceFunc) Load(ctx context.Context) (map[string]any, error) { return f(ctx) }
 
-func TestNewWithOptionsRejectsInitialCandidate(t *testing.T) {
+func TestNewWithValidatorsRejectsInitialCandidate(t *testing.T) {
 	t.Parallel()
 	invalid := errors.New("port must be positive")
 	var candidate *config.Snapshot
-	c, err := config.NewWithOptions(t.Context(), []config.Source{src(map[string]any{"port": -1})},
+	c, err := config.New(t.Context(), []config.Source{src(map[string]any{"port": -1})},
 		config.WithValidator(func(_ context.Context, s *config.Snapshot) error {
 			candidate = s
 			if s.Int("port") <= 0 {
@@ -82,14 +82,14 @@ func TestNewWithOptionsRejectsInitialCandidate(t *testing.T) {
 			return nil
 		}))
 	if c != nil || !errors.Is(err, invalid) || !strings.Contains(err.Error(), "config: validate 0") {
-		t.Fatalf("NewWithOptions = %v, %v", c, err)
+		t.Fatalf("New = %v, %v", c, err)
 	}
 	if candidate == nil || candidate.Int("port") != -1 {
 		t.Fatalf("validator did not receive the rejected candidate: %v", candidate)
 	}
 }
 
-func TestNewWithOptionsValidatesMergedTreeInOrder(t *testing.T) {
+func TestNewWithValidatorsValidatesMergedTreeInOrder(t *testing.T) {
 	t.Parallel()
 	type key struct{}
 	ctx := context.WithValue(t.Context(), key{}, "request")
@@ -98,7 +98,7 @@ func TestNewWithOptionsValidatesMergedTreeInOrder(t *testing.T) {
 	sources := []config.Source{base, override}
 	var order []int
 	var retained *config.Snapshot
-	c, err := config.NewWithOptions(ctx, sources, nil, config.WithValidator(nil),
+	c, err := config.New(ctx, sources, nil, config.WithValidator(nil),
 		config.WithValidator(func(got context.Context, s *config.Snapshot) error {
 			order = append(order, 1)
 			retained = s
@@ -146,7 +146,7 @@ func TestReloadRejectsCandidateAndRecovers(t *testing.T) {
 	s := src(map[string]any{"revision": 1})
 	var candidates []*config.Snapshot
 	var after int
-	c, err := config.NewWithOptions(t.Context(), []config.Source{s},
+	c, err := config.New(t.Context(), []config.Source{s},
 		config.WithValidator(func(_ context.Context, candidate *config.Snapshot) error {
 			candidates = append(candidates, candidate)
 			// Reads and mutation of copies cannot alter validation or publication.
@@ -202,7 +202,7 @@ func TestReloadCancellationPreservesPublishedValues(t *testing.T) {
 				}
 				return map[string]any{"v": 1}, nil
 			})
-			c, err := config.NewWithOptions(t.Context(), []config.Source{s},
+			c, err := config.New(t.Context(), []config.Source{s},
 				config.WithValidator(func(context.Context, *config.Snapshot) error {
 					if loading && stage == "last validator" {
 						cancel()
@@ -228,8 +228,8 @@ func TestReloadCancellationPreservesPublishedValues(t *testing.T) {
 	t.Run("no sources", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(t.Context())
 		cancel()
-		if c, err := config.NewWithOptions(ctx, nil); c != nil || !errors.Is(err, context.Canceled) {
-			t.Fatalf("NewWithOptions = %v, %v", c, err)
+		if c, err := config.New(ctx, nil); c != nil || !errors.Is(err, context.Canceled) {
+			t.Fatalf("New = %v, %v", c, err)
 		}
 	})
 }
@@ -243,7 +243,7 @@ func TestReloadValidationDoesNotBlockReaders(t *testing.T) {
 			return map[string]any{"a": v, "b": v}, nil
 		})
 		var c *config.Config
-		c, err := config.NewWithOptions(t.Context(), []config.Source{s},
+		c, err := config.New(t.Context(), []config.Source{s},
 			config.WithValidator(func(_ context.Context, candidate *config.Snapshot) error {
 				if candidate.Int("a") == 2 {
 					if c.Int("a") != 1 {
@@ -371,17 +371,17 @@ func TestNewNormalizesTypedContainers(t *testing.T) {
 }
 
 func TestNewErrors(t *testing.T) {
-	if _, err := config.New(t.Context(), src(nil), nil); err == nil || !strings.HasPrefix(err.Error(), "config: ") {
+	if _, err := config.New(t.Context(), []config.Source{src(nil), nil}); err == nil || !strings.HasPrefix(err.Error(), "config: ") {
 		t.Fatalf("nil source: err = %v", err)
 	}
 	boom := errors.New("boom")
-	_, err := config.New(t.Context(), src(nil), &mapSource{err: boom})
+	_, err := config.New(t.Context(), []config.Source{src(nil), &mapSource{err: boom}})
 	if !errors.Is(err, boom) || !strings.Contains(err.Error(), "config: load source 1") {
 		t.Fatalf("load error = %v", err)
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	if _, err := config.New(ctx, src(nil)); !errors.Is(err, context.Canceled) {
+	if _, err := config.New(ctx, []config.Source{src(nil)}); !errors.Is(err, context.Canceled) {
 		t.Fatalf("canceled ctx: err = %v", err)
 	}
 }
@@ -659,11 +659,11 @@ func TestWatch(t *testing.T) {
 	})
 }
 
-func TestWatchWithOptionsReportsFailuresAndCallbacksMayReload(t *testing.T) {
+func TestWatchReloadErrorHandlerReportsFailuresAndCallbacksMayReload(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		invalid := errors.New("invalid value")
 		ws := &watchSource{m: map[string]any{"v": 1}, changes: make(chan struct{})}
-		c, err := config.NewWithOptions(t.Context(), []config.Source{ws},
+		c, err := config.New(t.Context(), []config.Source{ws},
 			config.WithValidator(func(_ context.Context, s *config.Snapshot) error {
 				if s.Int("v") < 1 {
 					return invalid
@@ -679,7 +679,7 @@ func TestWatchWithOptionsReportsFailuresAndCallbacksMayReload(t *testing.T) {
 		var reported []error
 		var changes []int
 		go func() {
-			done <- c.WatchWithOptions(ctx, func(got *config.Config) {
+			done <- c.Watch(ctx, func(got *config.Config) {
 				if got != c {
 					t.Error("change callback lost Config identity")
 				}
@@ -726,7 +726,7 @@ func TestWatchWithOptionsReportsFailuresAndCallbacksMayReload(t *testing.T) {
 	})
 }
 
-func TestWatchWithOptionsErrorHandlerIsSynchronousAndCoalesces(t *testing.T) {
+func TestWatchReloadErrorHandlerErrorHandlerIsSynchronousAndCoalesces(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		boom := errors.New("load failure")
 		ws := &watchSource{m: map[string]any{"v": 1}, changes: make(chan struct{})}
@@ -737,7 +737,7 @@ func TestWatchWithOptionsErrorHandlerIsSynchronousAndCoalesces(t *testing.T) {
 		done := make(chan error, 1)
 		var reports, changes atomic.Int32
 		go func() {
-			done <- c.WatchWithOptions(ctx, func(*config.Config) { changes.Add(1) },
+			done <- c.Watch(ctx, func(*config.Config) { changes.Add(1) },
 				config.WithReloadErrorHandler(func(err error) {
 					if !errors.Is(err, boom) {
 						t.Errorf("error callback = %v", err)
@@ -773,11 +773,11 @@ func TestWatchWithOptionsErrorHandlerIsSynchronousAndCoalesces(t *testing.T) {
 	})
 }
 
-func TestWatchWithOptionsSuppressesShutdownErrors(t *testing.T) {
+func TestWatchReloadErrorHandlerSuppressesShutdownErrors(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ws := &watchSource{m: map[string]any{"v": 1}, changes: make(chan struct{})}
 		var validating atomic.Bool
-		c, err := config.NewWithOptions(t.Context(), []config.Source{ws},
+		c, err := config.New(t.Context(), []config.Source{ws},
 			config.WithValidator(func(ctx context.Context, _ *config.Snapshot) error {
 				if validating.Load() {
 					<-ctx.Done()
@@ -792,7 +792,7 @@ func TestWatchWithOptionsSuppressesShutdownErrors(t *testing.T) {
 		defer cancel()
 		done := make(chan error, 1)
 		go func() {
-			done <- c.WatchWithOptions(ctx, func(*config.Config) { t.Error("shutdown invoked change callback") },
+			done <- c.Watch(ctx, func(*config.Config) { t.Error("shutdown invoked change callback") },
 				config.WithReloadErrorHandler(func(error) { t.Error("shutdown invoked error callback") }))
 		}()
 		validating.Store(true)
@@ -801,7 +801,7 @@ func TestWatchWithOptionsSuppressesShutdownErrors(t *testing.T) {
 		synctest.Wait()
 		cancel()
 		if err := <-done; err != nil {
-			t.Fatalf("WatchWithOptions = %v", err)
+			t.Fatalf("Watch = %v", err)
 		}
 		if c.Int("v") != 1 {
 			t.Fatal("shutdown published canceled candidate")
@@ -852,7 +852,7 @@ func TestWatchReturnsSourceError(t *testing.T) {
 		c := mustNew(t, other, failing)
 		done := make(chan error, 1)
 		go func() {
-			done <- c.WatchWithOptions(t.Context(), nil,
+			done <- c.Watch(t.Context(), nil,
 				config.WithReloadErrorHandler(func(error) { t.Error("terminal error reported as a reload failure") }))
 		}()
 		failing.changes <- struct{}{}

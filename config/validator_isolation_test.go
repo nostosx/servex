@@ -8,7 +8,7 @@ import (
 )
 
 func TestValidatorSnapshotAssignmentDoesNotAffectOtherValidators(t *testing.T) {
-	c, err := config.NewWithOptions(t.Context(), []config.Source{src(map[string]any{"port": 8080})},
+	c, err := config.New(t.Context(), []config.Source{src(map[string]any{"port": 8080})},
 		config.WithValidator(func(_ context.Context, candidate *config.Snapshot) error {
 			// Replacing the caller-owned view must not replace a later validator's view.
 			*candidate = config.Snapshot{}

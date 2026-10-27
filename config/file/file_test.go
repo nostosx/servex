@@ -259,7 +259,7 @@ func TestConfigWatchReloadsFile(t *testing.T) {
 	writeFile(t, path, `{"http":{"addr":":8000","timeout":"1s"},"v":0}`)
 	t.Setenv("SVXFILETEST_HTTP__ADDR", ":9000")
 
-	c, err := config.New(t.Context(), file.New(path, file.WithPollInterval(5*time.Millisecond)), config.Env("SVXFILETEST_"))
+	c, err := config.New(t.Context(), []config.Source{file.New(path, file.WithPollInterval(5*time.Millisecond)), config.Env("SVXFILETEST_")})
 	if err != nil {
 		t.Fatal(err)
 	}

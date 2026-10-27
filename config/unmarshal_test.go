@@ -404,9 +404,9 @@ func TestUnmarshalNestedPointers(t *testing.T) {
 }
 
 func BenchmarkUnmarshal(b *testing.B) {
-	c, err := config.New(b.Context(), src(map[string]any{
+	c, err := config.New(b.Context(), []config.Source{src(map[string]any{
 		"server": map[string]any{"addr": ":8000", "port": "8080", "timeout": "5s", "tags": []any{"a", "b"}},
-	}))
+	})})
 	if err != nil {
 		b.Fatal(err)
 	}
