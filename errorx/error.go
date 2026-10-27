@@ -23,8 +23,10 @@ type Error struct {
 	// Metadata holds additional key/value details.
 	Metadata map[string]string
 
-	cause     error
-	retryable *bool
+	cause      error
+	retryable  *bool
+	remote     bool // decoded from another service by a transport client
+	retryLocal bool // retryable set by WithRetryable after WithRemote
 }
 
 // New returns an Error with the given code, reason and message.
@@ -66,7 +68,8 @@ func (e *Error) Unwrap() error {
 }
 
 // Is reports whether target is an *Error with the same Code and Reason as e.
-// Message, metadata, cause and the retryable flag are ignored.
+// Message, metadata, cause, the retryable flag and the remote mark are
+// ignored.
 func (e *Error) Is(target error) bool {
 	t, ok := target.(*Error)
 	if !ok || e == nil || t == nil {
@@ -96,11 +99,41 @@ func (e *Error) WithMetadata(kv map[string]string) *Error {
 }
 
 // WithRetryable returns a copy of e whose retryable flag is explicitly set,
-// overriding the default derived from Code.
+// overriding the default derived from Code. On a remote error the setting is
+// a local decision, so PropagatedRetryable reports it to the next caller.
 func (e *Error) WithRetryable(retryable bool) *Error {
 	c := e.clone()
 	c.retryable = new(retryable)
+	c.retryLocal = true
 	return c
+}
+
+// WithRemote returns a copy of e marked as decoded from another service.
+// Transport clients call it on errors received from a remote peer. The copy
+// keeps the retry flag of the remote body, so Retryable still lets the
+// immediate caller retry its own call, but PropagatedRetryable reports false
+// unless WithRetryable is applied afterwards. This stops each hop of a call
+// chain from retrying the same failure again, which would multiply the
+// attempts reaching the failing service.
+func (e *Error) WithRemote() *Error {
+	c := e.clone()
+	c.remote = true
+	c.retryLocal = false
+	return c
+}
+
+// Remote reports whether e was decoded from another service by a transport
+// client.
+func (e *Error) Remote() bool {
+	return e != nil && e.remote
+}
+
+// PropagatedRetryable reports the retry flag a server should send to its own
+// caller: Retryable for local errors and for remote errors whose flag was set
+// with WithRetryable after WithRemote, and false for other remote errors,
+// whose retry already belongs to the hop that received them.
+func (e *Error) PropagatedRetryable() bool {
+	return e.Retryable() && (!e.remote || e.retryLocal)
 }
 
 // Retryable reports whether the failed operation may be retried. An explicit
