@@ -460,6 +460,8 @@ type recMeter struct {
 	histograms map[string]map[string][]float64
 	buckets    map[string][]float64
 	labels     map[string][]string
+	// spans names the span found in the context of every observation.
+	spans []string
 }
 
 func newRecMeter() *recMeter {
@@ -508,6 +510,23 @@ func (m *recMeter) observations(name string, labels ...string) []float64 {
 	return slices.Clone(m.histograms[name][strings.Join(labels, ",")])
 }
 
+// recordSpanLocked records the name of the recorded span carried by ctx, or
+// "" when there is none. m.mu must be held.
+func (m *recMeter) recordSpanLocked(ctx context.Context) {
+	name := ""
+	if s, ok := tracing.SpanFromContext(ctx).(*recSpan); ok {
+		name = s.name
+	}
+	m.spans = append(m.spans, name)
+}
+
+// observedSpans returns the spans recorded by recordSpanLocked.
+func (m *recMeter) observedSpans() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return slices.Clone(m.spans)
+}
+
 type recCounter struct {
 	m      *recMeter
 	name   string
@@ -518,9 +537,10 @@ func (c *recCounter) With(labelValues ...string) metrics.Counter {
 	return &recCounter{m: c.m, name: c.name, labels: labelValues}
 }
 
-func (c *recCounter) Add(delta float64) {
+func (c *recCounter) Add(ctx context.Context, delta float64) {
 	c.m.mu.Lock()
 	defer c.m.mu.Unlock()
+	c.m.recordSpanLocked(ctx)
 	c.m.counters[c.name][strings.Join(c.labels, ",")] += delta
 }
 
@@ -534,9 +554,10 @@ func (h *recHistogram) With(labelValues ...string) metrics.Histogram {
 	return &recHistogram{m: h.m, name: h.name, labels: labelValues}
 }
 
-func (h *recHistogram) Observe(v float64) {
+func (h *recHistogram) Observe(ctx context.Context, v float64) {
 	h.m.mu.Lock()
 	defer h.m.mu.Unlock()
+	h.m.recordSpanLocked(ctx)
 	key := strings.Join(h.labels, ",")
 	h.m.histograms[h.name][key] = append(h.m.histograms[h.name][key], v)
 }

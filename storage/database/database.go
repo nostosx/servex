@@ -116,19 +116,45 @@ func OpenDB(c driver.Connector, opts ...Option) *sql.DB {
 	return sql.OpenDB(&connector{base: c, in: newInstrument(o)})
 }
 
+// HookOption configures a hook created by Hook.
+type HookOption func(*hookOptions)
+
+type hookOptions struct {
+	readiness bool
+}
+
+// WithReadiness sets whether the hook takes part in app readiness through a
+// Check method that pings the database. The default is true. Disable it when
+// the service can still serve some requests while the database is down, so
+// that a database outage does not take every instance out of rotation.
+func WithReadiness(enabled bool) HookOption {
+	return func(o *hookOptions) { o.readiness = enabled }
+}
+
 // Hook returns an app.Hook named name that pings db on Start, failing the
-// start if the database is unreachable, and closes db on Stop. The returned
-// value also implements Check(ctx) error, which pings db, so it takes part in
-// app.App readiness and can be used as a health.Checker. Hook takes lifecycle
-// ownership of db; it panics if db is nil.
-func Hook(name string, db *sql.DB) app.Hook {
+// start if the database is unreachable, and closes db on Stop. Unless
+// WithReadiness(false) is given, the returned value also implements
+// Check(ctx) error, which pings db, so it takes part in app.App readiness and
+// can be used as a health.Checker. Start pings db either way. Hook takes
+// lifecycle ownership of db; it panics if db is nil.
+func Hook(name string, db *sql.DB, opts ...HookOption) app.Hook {
 	if db == nil {
 		panic("database: Hook with nil *sql.DB")
 	}
-	return &dbHook{name: name, db: db}
+	o := hookOptions{readiness: true}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(&o)
+		}
+	}
+	h := &dbHook{name: name, db: db}
+	if o.readiness {
+		return &readyDBHook{h}
+	}
+	return h
 }
 
-// dbHook implements app.Hook and the optional Check method for a *sql.DB.
+// dbHook implements app.Hook for a *sql.DB.
 type dbHook struct {
 	name string
 	db   *sql.DB
@@ -136,7 +162,7 @@ type dbHook struct {
 
 func (h *dbHook) Name() string { return h.name }
 
-func (h *dbHook) Start(ctx context.Context) error { return h.Check(ctx) }
+func (h *dbHook) Start(ctx context.Context) error { return h.ping(ctx) }
 
 func (h *dbHook) Stop(context.Context) error {
 	if err := h.db.Close(); err != nil {
@@ -145,13 +171,19 @@ func (h *dbHook) Stop(context.Context) error {
 	return nil
 }
 
-// Check pings the database.
-func (h *dbHook) Check(ctx context.Context) error {
+// ping pings the database.
+func (h *dbHook) ping(ctx context.Context) error {
 	if err := h.db.PingContext(ctx); err != nil {
 		return fmt.Errorf("database: ping %q: %w", h.name, err)
 	}
 	return nil
 }
+
+// readyDBHook is a dbHook that also takes part in readiness.
+type readyDBHook struct{ *dbHook }
+
+// Check pings the database.
+func (h *readyDBHook) Check(ctx context.Context) error { return h.ping(ctx) }
 
 // Tx runs fn in a transaction. If fn returns nil the transaction is
 // committed; if fn returns an error it is rolled back and the error is

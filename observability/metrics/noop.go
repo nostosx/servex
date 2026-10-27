@@ -1,5 +1,7 @@
 package metrics
 
+import "context"
+
 // Noop returns a Meter whose metrics discard every observation. It does not
 // allocate and is safe for concurrent use.
 func Noop() Meter { return noopMeter{} }
@@ -18,18 +20,18 @@ func (noopMeter) Histogram(string, string, []float64, ...string) Histogram {
 // noopCounter is a Counter that discards every update.
 type noopCounter struct{}
 
-func (c noopCounter) With(...string) Counter { return c }
-func (noopCounter) Add(float64)              {}
+func (c noopCounter) With(...string) Counter     { return c }
+func (noopCounter) Add(context.Context, float64) {}
 
 // noopGauge is a Gauge that discards every update.
 type noopGauge struct{}
 
-func (g noopGauge) With(...string) Gauge { return g }
-func (noopGauge) Set(float64)            {}
-func (noopGauge) Add(float64)            {}
+func (g noopGauge) With(...string) Gauge       { return g }
+func (noopGauge) Set(context.Context, float64) {}
+func (noopGauge) Add(context.Context, float64) {}
 
 // noopHistogram is a Histogram that discards every observation.
 type noopHistogram struct{}
 
-func (h noopHistogram) With(...string) Histogram { return h }
-func (noopHistogram) Observe(float64)            {}
+func (h noopHistogram) With(...string) Histogram       { return h }
+func (noopHistogram) Observe(context.Context, float64) {}

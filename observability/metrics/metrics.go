@@ -1,7 +1,13 @@
 package metrics
 
+import "context"
+
 // Meter creates metrics. Calling a constructor again with the same name and
 // kind returns an equivalent metric. Label names are declared at creation.
+//
+// Recording methods take the context of the operation being measured, so
+// that implementations can attach exemplars from the active span or read
+// context-scoped attributes. Implementations must not retain ctx.
 type Meter interface {
 	// Counter returns a monotonically increasing counter.
 	Counter(name, help string, labelNames ...string) Counter
@@ -17,7 +23,7 @@ type Counter interface {
 	// the label names declared at creation.
 	With(labelValues ...string) Counter
 	// Add increases the counter by delta, which must not be negative.
-	Add(delta float64)
+	Add(ctx context.Context, delta float64)
 }
 
 // Gauge is a value that can go up and down.
@@ -26,9 +32,9 @@ type Gauge interface {
 	// label names declared at creation.
 	With(labelValues ...string) Gauge
 	// Set sets the gauge to v.
-	Set(v float64)
+	Set(ctx context.Context, v float64)
 	// Add adds delta, which may be negative, to the gauge.
-	Add(delta float64)
+	Add(ctx context.Context, delta float64)
 }
 
 // Histogram samples observations into buckets.
@@ -37,7 +43,7 @@ type Histogram interface {
 	// the label names declared at creation.
 	With(labelValues ...string) Histogram
 	// Observe records v.
-	Observe(v float64)
+	Observe(ctx context.Context, v float64)
 }
 
 // DefaultBuckets are histogram bucket upper bounds in seconds, suited to

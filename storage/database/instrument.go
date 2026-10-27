@@ -67,7 +67,8 @@ func (in *instrument) start(ctx context.Context, op, statement string) (context.
 			status = "error"
 			span.RecordError(err)
 		}
-		in.ops.With(in.system, op, status).Add(1)
-		in.durations.With(in.system, op).Observe(time.Since(begin).Seconds())
+		// The span context lets a meter link the observation to the span.
+		in.ops.With(in.system, op, status).Add(ctx, 1)
+		in.durations.With(in.system, op).Observe(ctx, time.Since(begin).Seconds())
 	}
 }
