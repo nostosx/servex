@@ -34,21 +34,21 @@ func TestServerNativeLimitOptions(t *testing.T) {
 		{
 			name: "configured",
 			opts: []ServerOption{
-				ReadTimeout(11 * time.Second), ReadHeaderTimeout(12 * time.Second),
-				WriteTimeout(13 * time.Second), IdleTimeout(14 * time.Second), MaxHeaderBytes(12345),
+				WithReadTimeout(11 * time.Second), WithReadHeaderTimeout(12 * time.Second),
+				WithWriteTimeout(13 * time.Second), WithIdleTimeout(14 * time.Second), WithMaxHeaderBytes(12345),
 			},
 			want: settings{ReadTimeout: 11 * time.Second, ReadHeaderTimeout: 12 * time.Second,
 				WriteTimeout: 13 * time.Second, IdleTimeout: 14 * time.Second, MaxHeaderBytes: 12345},
 		},
 		{
 			name: "negative native values",
-			opts: []ServerOption{ReadTimeout(-1), ReadHeaderTimeout(-2), WriteTimeout(-3), IdleTimeout(-4), MaxHeaderBytes(-5)},
+			opts: []ServerOption{WithReadTimeout(-1), WithReadHeaderTimeout(-2), WithWriteTimeout(-3), WithIdleTimeout(-4), WithMaxHeaderBytes(-5)},
 			want: settings{ReadTimeout: -1, ReadHeaderTimeout: -2, WriteTimeout: -3, IdleTimeout: -4, MaxHeaderBytes: -5},
 		},
 		{
 			name: "last option wins",
-			opts: []ServerOption{ReadTimeout(time.Second), ReadTimeout(0), ReadHeaderTimeout(time.Second), ReadHeaderTimeout(0),
-				WriteTimeout(time.Second), WriteTimeout(0), IdleTimeout(time.Second), IdleTimeout(0), MaxHeaderBytes(1024), MaxHeaderBytes(0)},
+			opts: []ServerOption{WithReadTimeout(time.Second), WithReadTimeout(0), WithReadHeaderTimeout(time.Second), WithReadHeaderTimeout(0),
+				WithWriteTimeout(time.Second), WithWriteTimeout(0), WithIdleTimeout(time.Second), WithIdleTimeout(0), WithMaxHeaderBytes(1024), WithMaxHeaderBytes(0)},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -129,7 +129,7 @@ func startLimitPipeServer(t *testing.T, s *Server) net.Conn {
 
 func TestNativeMaxHeaderBytesRejectsBeforeHandler(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		s := NewServer(MaxHeaderBytes(1024))
+		s := NewServer(WithMaxHeaderBytes(1024))
 		s.HandleHTTP("GET /", http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 			t.Error("oversized headers reached handler")
 		}))
@@ -153,8 +153,8 @@ func TestNativeReadHeaderTimeout(t *testing.T) {
 		name string
 		opts []ServerOption
 	}{
-		{name: "explicit", opts: []ServerOption{ReadHeaderTimeout(time.Second)}},
-		{name: "read timeout fallback", opts: []ServerOption{ReadTimeout(time.Second)}},
+		{name: "explicit", opts: []ServerOption{WithReadHeaderTimeout(time.Second)}},
+		{name: "read timeout fallback", opts: []ServerOption{WithReadTimeout(time.Second)}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
@@ -177,7 +177,7 @@ func TestNativeReadHeaderTimeout(t *testing.T) {
 
 func TestNativeReadTimeoutIncludesBody(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		s := NewServer(ReadTimeout(time.Second))
+		s := NewServer(WithReadTimeout(time.Second))
 		Route[struct{}](s, "POST /", func(context.Context, any) (any, error) {
 			t.Error("incomplete request body reached endpoint")
 			return nil, nil
@@ -200,7 +200,7 @@ func TestNativeReadTimeoutIncludesBody(t *testing.T) {
 
 func TestNativeWriteTimeout(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		s := NewServer(WriteTimeout(time.Second))
+		s := NewServer(WithWriteTimeout(time.Second))
 		s.Handle("GET /", func(context.Context, any) (any, error) {
 			time.Sleep(2 * time.Second)
 			return "too late", nil
@@ -224,7 +224,7 @@ func TestNativeWriteTimeout(t *testing.T) {
 
 func TestNativeIdleTimeout(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		s := NewServer(IdleTimeout(time.Second))
+		s := NewServer(WithIdleTimeout(time.Second))
 		s.Handle("GET /", func(context.Context, any) (any, error) { return nil, nil }, nil)
 		conn := startLimitPipeServer(t, s)
 		if _, err := io.WriteString(conn, "GET / HTTP/1.1\r\nHost: example.test\r\n\r\n"); err != nil {

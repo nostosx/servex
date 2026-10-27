@@ -75,9 +75,10 @@ func codeOf(status int) errorx.Code {
 }
 
 // errorBody is the fixed JSON representation of an errorx.Error. Servers
-// always write Retryable with the effective errorx.Error.Retryable value, so
-// an explicit WithRetryable setting survives the hop; it is absent from the
-// bodies of servers that predate the field.
+// always write Retryable with errorx.Error.PropagatedRetryable, so an explicit
+// WithRetryable setting survives the hop while an error received from another
+// service is not retried again; it is absent from the bodies of servers that
+// predate the field.
 type errorBody struct {
 	Code      string            `json:"code"`
 	Reason    string            `json:"reason"`

@@ -9,7 +9,7 @@ import (
 	"github.com/nostosx/servex/errorx"
 )
 
-// ResponseEncoder sets the successful response encoder for a route. It runs
+// WithResponseEncoder sets the successful response encoder for a route. It runs
 // after endpoint middleware, including for a nil reply, with request metadata
 // in r.Context(). A nil encoder keeps the default codec and nil-reply behavior.
 //
@@ -25,7 +25,7 @@ import (
 // body write, supported flush or hijack attempt, an error is logged without
 // writing another response. Informational statuses other than 101 do not
 // commit the final response. Endpoint and binding errors bypass the encoder.
-func ResponseEncoder(fn func(http.ResponseWriter, *http.Request, any) error) RouteOption {
+func WithResponseEncoder(fn func(http.ResponseWriter, *http.Request, any) error) RouteOption {
 	return func(o *routeOptions) { o.encoder = fn }
 }
 

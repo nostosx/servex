@@ -30,10 +30,10 @@ func TestHTTPMiddlewareWrapsEveryRequest(t *testing.T) {
 		}
 	}
 	s := httpx.NewServer(
-		httpx.HTTPMiddleware(mark("outer"), nil),
-		httpx.HTTPMiddleware(mark("inner")),
-		httpx.Middleware(endpointMW),
-		httpx.Health(health.CheckerFunc(func(context.Context) error { return nil })),
+		httpx.WithHTTPMiddleware(mark("outer"), nil),
+		httpx.WithHTTPMiddleware(mark("inner")),
+		httpx.WithMiddleware(endpointMW),
+		httpx.WithHealth(health.CheckerFunc(func(context.Context) error { return nil })),
 	)
 	httpx.Route[userReq](s, "POST /v1/users", func(context.Context, any) (any, error) {
 		order = append(order, "handler")
@@ -79,7 +79,7 @@ func TestHTTPMiddlewareRejectsBeforeBodyIsRead(t *testing.T) {
 			w.WriteHeader(http.StatusUnauthorized)
 		})
 	}
-	s := httpx.NewServer(httpx.HTTPMiddleware(deny))
+	s := httpx.NewServer(httpx.WithHTTPMiddleware(deny))
 	s.Handle("POST /", func(context.Context, any) (any, error) {
 		t.Error("endpoint called")
 		return nil, nil

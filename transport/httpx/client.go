@@ -147,9 +147,12 @@ func NewClient(ctx context.Context, target string, opts ...ClientOption) (*Clien
 //
 // A 2xx reply is decoded into the value returned by newReply (an empty body
 // leaves it untouched); a nil newReply discards the body and yields a nil
-// reply. Other statuses yield an *errorx.Error, decoded from the errorx JSON
-// body when present and otherwise derived from the status code; the body's
-// retryable flag, when present, overrides the code's default. A request that
+// reply. Other statuses yield a remote *errorx.Error (see errorx.WithRemote),
+// decoded from the errorx JSON body when present and otherwise derived from
+// the status code; the body's retryable flag, when present, overrides the
+// code's default. Retry middleware of this client may retry such an error, but
+// a server returning it tells its own caller not to retry unless the handler
+// sets WithRetryable again. A request that
 // cannot be exchanged with the node yields errorx.Unavailable, unless the
 // failure comes from ctx cancellation or a deadline. That error is retryable
 // only when the request cannot have reached the node, because the transport
@@ -266,7 +269,8 @@ func (c *Client) replyCodec(ct string) encoding.Codec {
 	return c.codec
 }
 
-// decodeError converts a non-2xx response into an *errorx.Error.
+// decodeError converts a non-2xx response into a remote *errorx.Error, so a
+// server returning it reports PropagatedRetryable to its own caller.
 func decodeError(resp *http.Response) error {
 	data, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
 	var body errorBody
@@ -276,7 +280,7 @@ func decodeError(resp *http.Response) error {
 			if body.Retryable != nil {
 				e = e.WithRetryable(*body.Retryable)
 			}
-			return e
+			return e.WithRemote()
 		}
 	}
 	msg := resp.Status
@@ -286,7 +290,7 @@ func decodeError(resp *http.Response) error {
 		}
 		msg += ": " + text
 	}
-	return errorx.New(codeOf(resp.StatusCode), "", msg)
+	return errorx.New(codeOf(resp.StatusCode), "", msg).WithRemote()
 }
 
 // transportError classifies a failure to exchange a request with a node.

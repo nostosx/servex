@@ -64,7 +64,7 @@ type errBody struct {
 }
 
 func TestServerLifecycle(t *testing.T) {
-	s := httpx.NewServer(httpx.Address("127.0.0.1:0"))
+	s := httpx.NewServer(httpx.WithAddress("127.0.0.1:0"))
 	httpx.Route[userReq](s, "GET /v1/users/{id}", echo)
 	if s.Name() != "http" {
 		t.Errorf("Name = %q", s.Name())
@@ -76,7 +76,7 @@ func TestServerLifecycle(t *testing.T) {
 		t.Errorf("Stop before Start: %v", err)
 	}
 
-	s = httpx.NewServer(httpx.Address("127.0.0.1:0"))
+	s = httpx.NewServer(httpx.WithAddress("127.0.0.1:0"))
 	httpx.Route[userReq](s, "GET /v1/users/{id}", echo)
 	if err := s.Start(t.Context()); err != nil {
 		t.Fatalf("Start: %v", err)
@@ -114,7 +114,7 @@ func TestServerLifecycle(t *testing.T) {
 	}
 
 	// A second server on the same address fails to start.
-	dup := httpx.NewServer(httpx.Address(s.URL().Host))
+	dup := httpx.NewServer(httpx.WithAddress(s.URL().Host))
 	if err := dup.Start(t.Context()); err == nil {
 		_ = dup.Stop(t.Context()) // best-effort cleanup of the unexpected server
 		t.Error("Start on a used address succeeded")
@@ -289,7 +289,7 @@ func (textCodec) Unmarshal(data []byte, v any) error {
 }
 
 func TestCodecNegotiation(t *testing.T) {
-	s := httpx.NewServer(httpx.Codecs(textCodec{}, nil))
+	s := httpx.NewServer(httpx.WithCodecs(textCodec{}, nil))
 	httpx.Route[map[string]string](s, "POST /echo", func(_ context.Context, req any) (any, error) {
 		m := *req.(*map[string]string)
 		if m == nil {
@@ -402,7 +402,7 @@ func TestErrorResponses(t *testing.T) {
 }
 
 func TestErrorBodyIsJSONRegardlessOfAccept(t *testing.T) {
-	s := httpx.NewServer(httpx.Codecs(textCodec{}))
+	s := httpx.NewServer(httpx.WithCodecs(textCodec{}))
 	s.Handle("GET /fail", func(context.Context, any) (any, error) {
 		return nil, errorx.New(errorx.NotFound, "X", "y")
 	}, nil)
@@ -428,7 +428,7 @@ func TestEncodeFailureIs500(t *testing.T) {
 
 func TestHealthProbes(t *testing.T) {
 	var ready error
-	s := httpx.NewServer(httpx.Health(health.CheckerFunc(func(context.Context) error { return ready })))
+	s := httpx.NewServer(httpx.WithHealth(health.CheckerFunc(func(context.Context) error { return ready })))
 	tests := []struct {
 		path   string
 		ready  error
@@ -472,7 +472,7 @@ func TestServerMetadataAndMiddleware(t *testing.T) {
 			}
 		}
 	}
-	s := httpx.NewServer(httpx.Middleware(mark("outer"), nil, mark("inner")))
+	s := httpx.NewServer(httpx.WithMiddleware(mark("outer"), nil, mark("inner")))
 	var handlerInfo metadata.Info
 	ep := func(ctx context.Context, req any) (any, error) {
 		order = append(order, "handler")
@@ -480,7 +480,7 @@ func TestServerMetadataAndMiddleware(t *testing.T) {
 		return nil, nil
 	}
 	s.Handle("GET /v1/users/{id}", ep, nil)
-	httpx.Route[userReq](s, "PUT /v1/users/{id}", ep, httpx.Operation("users.Update"))
+	httpx.Route[userReq](s, "PUT /v1/users/{id}", ep, httpx.WithOperation("users.Update"))
 	s.HandleHTTP("GET /raw", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		order = append(order, "raw")
 		w.WriteHeader(http.StatusTeapot)

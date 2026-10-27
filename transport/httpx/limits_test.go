@@ -90,7 +90,7 @@ func TestMaxBodyBytesBoundaries(t *testing.T) {
 							limit--
 						}
 						middlewareCalled, endpointCalled := false, false
-						s := httpx.NewServer(httpx.MaxBodyBytes(limit), httpx.Middleware(func(next endpoint.Endpoint) endpoint.Endpoint {
+						s := httpx.NewServer(httpx.WithMaxBodyBytes(limit), httpx.WithMiddleware(func(next endpoint.Endpoint) endpoint.Endpoint {
 							return func(ctx context.Context, req any) (any, error) {
 								middlewareCalled = true
 								return next(ctx, req)
@@ -145,7 +145,7 @@ func TestMaxBodyBytesMultipartEpilogue(t *testing.T) {
 				limit--
 			}
 			called := false
-			s := httpx.NewServer(httpx.MaxBodyBytes(limit))
+			s := httpx.NewServer(httpx.WithMaxBodyBytes(limit))
 			httpx.Route[limitedRequest](s, "POST /", func(context.Context, any) (any, error) {
 				called = true
 				return nil, nil
@@ -177,7 +177,7 @@ func (b *observedLimitBody) Read([]byte) (int, error) {
 func (*observedLimitBody) Close() error { return nil }
 
 func TestMaxBodyBytesRejectsDeclaredLengthBeforeBinding(t *testing.T) {
-	s := httpx.NewServer(httpx.MaxBodyBytes(8))
+	s := httpx.NewServer(httpx.WithMaxBodyBytes(8))
 	s.Handle("POST /", func(context.Context, any) (any, error) {
 		t.Error("endpoint called")
 		return nil, nil
@@ -195,7 +195,7 @@ func TestMaxBodyBytesRejectsDeclaredLengthBeforeBinding(t *testing.T) {
 }
 
 func TestMaxBodyBytesBindingFailureDoesNotDrain(t *testing.T) {
-	s := httpx.NewServer(httpx.MaxBodyBytes(8))
+	s := httpx.NewServer(httpx.WithMaxBodyBytes(8))
 	httpx.Route[struct{ Count int }](s, "POST /", func(context.Context, any) (any, error) {
 		t.Error("endpoint called")
 		return nil, nil
@@ -248,8 +248,8 @@ func TestMaxBodyBytesDisabledAndRawHandlers(t *testing.T) {
 		name string
 		opts []httpx.ServerOption
 	}{
-		{name: "zero", opts: []httpx.ServerOption{httpx.MaxBodyBytes(0)}},
-		{name: "negative", opts: []httpx.ServerOption{httpx.MaxBodyBytes(-1)}},
+		{name: "zero", opts: []httpx.ServerOption{httpx.WithMaxBodyBytes(0)}},
+		{name: "negative", opts: []httpx.ServerOption{httpx.WithMaxBodyBytes(-1)}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s := httpx.NewServer(tc.opts...)
@@ -266,7 +266,7 @@ func TestMaxBodyBytesDisabledAndRawHandlers(t *testing.T) {
 		})
 	}
 	t.Run("raw handler", func(t *testing.T) {
-		s := httpx.NewServer(httpx.MaxBodyBytes(1))
+		s := httpx.NewServer(httpx.WithMaxBodyBytes(1))
 		const payload = "a raw handler controls its body"
 		s.HandleHTTP("POST /", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			body, err := io.ReadAll(r.Body)
@@ -286,7 +286,7 @@ func TestMaxBodyBytesDisabledAndRawHandlers(t *testing.T) {
 }
 
 func TestMaxBodyBytesClientErrorSemantics(t *testing.T) {
-	s := httpx.NewServer(httpx.MaxBodyBytes(2))
+	s := httpx.NewServer(httpx.WithMaxBodyBytes(2))
 	httpx.Route[limitedRequest](s, "POST /limited", echo)
 	s.Handle("GET /invalid", func(context.Context, any) (any, error) {
 		return nil, errorx.New(errorx.InvalidArgument, "BODY_TOO_LARGE", "business validation")
@@ -344,12 +344,12 @@ func TestMultipartTemporaryFilesRemovedAfterResponse(t *testing.T) {
 		}, status: http.StatusBadRequest},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			s := httpx.NewServer(httpx.MaxBodyBytes(int64(len(body))))
+			s := httpx.NewServer(httpx.WithMaxBodyBytes(int64(len(body))))
 			var filename string
 			var form *multipart.Form
 			var opts []httpx.RouteOption
 			if tc.encoder {
-				opts = append(opts, httpx.ResponseEncoder(func(w http.ResponseWriter, r *http.Request, _ any) error {
+				opts = append(opts, httpx.WithResponseEncoder(func(w http.ResponseWriter, r *http.Request, _ any) error {
 					form = r.MultipartForm
 					if _, err := os.Stat(filename); err != nil {
 						t.Errorf("temporary file removed before encoder: %v", err)

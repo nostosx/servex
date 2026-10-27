@@ -42,9 +42,9 @@ func TestEndToEndThroughDiscovery(t *testing.T) {
 	// it through the variable assigned below, before anything is served.
 	var a *app.App
 	srv := httpx.NewServer(
-		httpx.Address("127.0.0.1:0"),
-		httpx.Health(health.CheckerFunc(func(ctx context.Context) error { return a.Check(ctx) })),
-		httpx.Logger(slog.New(slog.DiscardHandler)),
+		httpx.WithAddress("127.0.0.1:0"),
+		httpx.WithHealth(health.CheckerFunc(func(ctx context.Context) error { return a.Check(ctx) })),
+		httpx.WithLogger(slog.New(slog.DiscardHandler)),
 	)
 	httpx.Route[e2eGetUser](srv, "GET /v1/users/{id}", func(ctx context.Context, req any) (any, error) {
 		r := req.(*e2eGetUser)
@@ -53,7 +53,7 @@ func TestEndToEndThroughDiscovery(t *testing.T) {
 		}
 		info, _ := metadata.FromContext(ctx)
 		return &e2eUser{ID: r.ID, Name: "user", Verbose: r.Verbose, RequestID: info.Header.Get("x-request-id")}, nil
-	}, httpx.Operation("users.Get"))
+	}, httpx.WithOperation("users.Get"))
 	httpx.Route[e2eUser](srv, "POST /v1/users/{id}", func(_ context.Context, req any) (any, error) {
 		return req, nil
 	})

@@ -30,7 +30,7 @@ var (
 )
 
 // DefaultMaxBodyBytes is the request body limit for Handle and Route when
-// MaxBodyBytes is not configured. It matches the default maximum message
+// WithMaxBodyBytes is not configured. It matches the default maximum message
 // size of gRPC servers.
 const DefaultMaxBodyBytes = 4 << 20
 
@@ -49,6 +49,7 @@ type ServerOption func(*serverOptions)
 
 // serverOptions holds the configuration collected from ServerOptions.
 type serverOptions struct {
+	name              string
 	addr              string
 	middleware        []endpoint.Middleware
 	httpMiddleware    []func(http.Handler) http.Handler
@@ -63,87 +64,94 @@ type serverOptions struct {
 	maxBodyBytes      int64
 }
 
-// Address sets the TCP address the server listens on. The default is
+// WithName sets the hook name of the server, which identifies it in app
+// logs and errors. The default is "http"; give each server of an App its own
+// name.
+func WithName(name string) ServerOption {
+	return func(o *serverOptions) { o.name = name }
+}
+
+// WithAddress sets the TCP address the server listens on. The default is
 // ":8000"; ":0" picks a free port, which URL reports after Start.
-func Address(addr string) ServerOption {
+func WithAddress(addr string) ServerOption {
 	return func(o *serverOptions) { o.addr = addr }
 }
 
-// ReadTimeout sets net/http's timeout for reading the entire request,
+// WithReadTimeout sets net/http's timeout for reading the entire request,
 // including the body. The default is zero, meaning no timeout.
-func ReadTimeout(d time.Duration) ServerOption {
+func WithReadTimeout(d time.Duration) ServerOption {
 	return func(o *serverOptions) { o.readTimeout = d }
 }
 
-// ReadHeaderTimeout sets net/http's timeout for reading request headers.
+// WithReadHeaderTimeout sets net/http's timeout for reading request headers.
 // The default is zero, which falls back to ReadTimeout.
-func ReadHeaderTimeout(d time.Duration) ServerOption {
+func WithReadHeaderTimeout(d time.Duration) ServerOption {
 	return func(o *serverOptions) { o.readHeaderTimeout = d }
 }
 
-// WriteTimeout sets net/http's timeout for writing the response. The default
+// WithWriteTimeout sets net/http's timeout for writing the response. The default
 // is zero, meaning no timeout.
-func WriteTimeout(d time.Duration) ServerOption {
+func WithWriteTimeout(d time.Duration) ServerOption {
 	return func(o *serverOptions) { o.writeTimeout = d }
 }
 
-// IdleTimeout sets net/http's timeout for waiting for the next request on a
+// WithIdleTimeout sets net/http's timeout for waiting for the next request on a
 // keep-alive connection. The default is zero, which falls back to ReadTimeout.
-func IdleTimeout(d time.Duration) ServerOption {
+func WithIdleTimeout(d time.Duration) ServerOption {
 	return func(o *serverOptions) { o.idleTimeout = d }
 }
 
-// MaxHeaderBytes sets net/http's maximum request header size. The default is
+// WithMaxHeaderBytes sets net/http's maximum request header size. The default is
 // zero, which uses http.DefaultMaxHeaderBytes.
-func MaxHeaderBytes(n int) ServerOption {
+func WithMaxHeaderBytes(n int) ServerOption {
 	return func(o *serverOptions) { o.maxHeaderBytes = n }
 }
 
-// MaxBodyBytes limits request bodies for Handle and Route, including unread
+// WithMaxBodyBytes limits request bodies for Handle and Route, including unread
 // body data. The default is DefaultMaxBodyBytes; values less than or equal
 // to zero disable the limit. HandleHTTP handlers retain control over their
 // request bodies.
-func MaxBodyBytes(n int64) ServerOption {
+func WithMaxBodyBytes(n int64) ServerOption {
 	return func(o *serverOptions) { o.maxBodyBytes = n }
 }
 
-// Middleware appends server middleware. It wraps every endpoint registered
+// WithMiddleware appends server middleware. It wraps every endpoint registered
 // with Handle or Route, in the order given; m[0] is the outermost layer.
-func Middleware(m ...endpoint.Middleware) ServerOption {
+func WithMiddleware(m ...endpoint.Middleware) ServerOption {
 	return func(o *serverOptions) { o.middleware = append(o.middleware, m...) }
 }
 
-// HTTPMiddleware appends net/http middleware that wraps the whole server
+// WithHTTPMiddleware appends net/http middleware that wraps the whole server
 // handler, in the order given; m[0] is the outermost layer. It runs for
 // every request the server receives, before routing and before the request
 // body is read or bound, so it also observes unmatched routes, binding
 // failures, HandleHTTP handlers and health probes. Use it for checks that
 // must reject a request before its body is consumed, such as authentication
 // or rate limiting, and for net/http instrumentation. Endpoint middleware
-// configured with Middleware still runs inside the matched route, after
+// configured with WithMiddleware still runs inside the matched route, after
 // binding. Nil middleware is skipped.
-func HTTPMiddleware(m ...func(http.Handler) http.Handler) ServerOption {
+func WithHTTPMiddleware(m ...func(http.Handler) http.Handler) ServerOption {
 	return func(o *serverOptions) { o.httpMiddleware = append(o.httpMiddleware, m...) }
 }
 
-// Codecs appends codecs used to decode request bodies and encode responses.
+// WithCodecs appends codecs used to decode request bodies and encode responses.
 // encoding.JSON is always available; a codec with the same name as an
 // earlier one replaces it.
-func Codecs(c ...encoding.Codec) ServerOption {
+func WithCodecs(c ...encoding.Codec) ServerOption {
 	return func(o *serverOptions) { o.codecs = append(o.codecs, c...) }
 }
 
-// Health mounts GET /livez, which always answers 200, and GET /readyz,
+// WithHealth mounts GET /livez, which always answers 200, and GET /readyz,
 // which answers 200 when c.Check succeeds and 503 otherwise. An app.App
 // satisfies health.Checker through its Check method.
-func Health(c health.Checker) ServerOption {
+func WithHealth(c health.Checker) ServerOption {
 	return func(o *serverOptions) { o.health = c }
 }
 
-// Logger sets the logger for serve errors, failed readiness checks and
+// WithLogger sets the logger for serve errors, failed readiness checks and
 // requests that fail with a 5xx status. The default is slog.Default(); a nil
 // logger keeps the default.
-func Logger(l *slog.Logger) ServerOption {
+func WithLogger(l *slog.Logger) ServerOption {
 	return func(o *serverOptions) {
 		if l != nil {
 			o.logger = l
@@ -160,9 +168,9 @@ type routeOptions struct {
 	encoder   func(http.ResponseWriter, *http.Request, any) error
 }
 
-// Operation sets the operation name reported in metadata.Info for the
+// WithOperation sets the operation name reported in metadata.Info for the
 // route. The default is the route pattern.
-func Operation(name string) RouteOption {
+func WithOperation(name string) RouteOption {
 	return func(o *routeOptions) { o.operation = name }
 }
 
@@ -170,6 +178,7 @@ func Operation(name string) RouteOption {
 // transport.Server and http.Handler, and reports fatal serve errors through
 // Err. All methods are safe for concurrent use.
 type Server struct {
+	name              string
 	addr              string
 	middleware        endpoint.Middleware
 	codecs            codecs
@@ -195,13 +204,14 @@ type Server struct {
 // NewServer creates a Server. Routes may be registered before or after
 // Start.
 func NewServer(opts ...ServerOption) *Server {
-	o := serverOptions{addr: ":8000", logger: slog.Default(), maxBodyBytes: DefaultMaxBodyBytes}
+	o := serverOptions{name: "http", addr: ":8000", logger: slog.Default(), maxBodyBytes: DefaultMaxBodyBytes}
 	for _, opt := range opts {
 		if opt != nil {
 			opt(&o)
 		}
 	}
 	s := &Server{
+		name:              o.name,
 		addr:              o.addr,
 		middleware:        endpoint.Chain(o.middleware...),
 		codecs:            newCodecs(o.codecs),
@@ -228,8 +238,8 @@ func NewServer(opts ...ServerOption) *Server {
 	return s
 }
 
-// Name returns "http".
-func (s *Server) Name() string { return "http" }
+// Name returns the name set by WithName, "http" by default.
+func (s *Server) Name() string { return s.name }
 
 // Start listens on the configured address synchronously and then serves
 // requests in a background goroutine. A Server can be started only once.
@@ -302,15 +312,15 @@ func (s *Server) URL() *url.URL {
 	return s.url.Clone()
 }
 
-// ServeHTTP passes the request through the HTTPMiddleware chain and
+// ServeHTTP passes the request through the WithHTTPMiddleware chain and
 // dispatches it to the registered routes.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.handler.ServeHTTP(w, r)
 }
 
 // HandleHTTP registers a plain http.Handler for pattern. Endpoint middleware
-// configured with Middleware is not applied; HTTPMiddleware is. Like http.ServeMux, it panics on invalid or conflicting
-// patterns.
+// configured with WithMiddleware is not applied; WithHTTPMiddleware is. Like
+// http.ServeMux, it panics on invalid or conflicting patterns.
 func (s *Server) HandleHTTP(pattern string, h http.Handler) {
 	s.mux.Handle(pattern, h)
 }
@@ -331,7 +341,7 @@ func (s *Server) HandleHTTP(pattern string, h http.Handler) {
 // pointers to them or slices of them. A nil newReq passes a nil request.
 //
 // The context carries metadata.Info with Kind server, Protocol "http", the
-// operation name and the request header. Unless ResponseEncoder is configured,
+// operation name and the request header. Unless WithResponseEncoder is configured,
 // a nil reply yields 204; any other reply is encoded with the codec negotiated
 // from Accept, then the request Content-Type, defaulting to JSON. Errors are
 // converted with errorx.From and written as a JSON body with the matching status.
@@ -358,6 +368,13 @@ func (s *Server) Handle(pattern string, ep endpoint.Endpoint, newReq func() any,
 // with new(Req).
 func Route[Req any](s *Server, pattern string, ep endpoint.Endpoint, opts ...RouteOption) {
 	s.Handle(pattern, ep, func() any { return new(Req) }, opts...)
+}
+
+// RouteFunc registers fn for pattern like Route, adapting it with
+// endpoint.Typed: fn receives the bound *Req and its Res is the reply.
+// Server middleware still sees the request as *Req and the reply as Res.
+func RouteFunc[Req, Res any](s *Server, pattern string, fn func(context.Context, *Req) (Res, error), opts ...RouteOption) {
+	Route[Req](s, pattern, endpoint.Typed(fn), opts...)
 }
 
 // route serves one registered endpoint.
@@ -535,7 +552,9 @@ func invalidParameter(err error) error {
 }
 
 // writeError writes err as the fixed JSON error body with the status mapped
-// from its code.
+// from its code. The retryable field is PropagatedRetryable, so a failure
+// already retried by the client that received it from another service is
+// not retried again by every caller up the chain.
 func (s *Server) writeError(w http.ResponseWriter, r *http.Request, operation string, err error) {
 	e := errorx.From(err)
 	status := statusOf(e.Code)
@@ -551,7 +570,7 @@ func (s *Server) writeError(w http.ResponseWriter, r *http.Request, operation st
 		Reason:    e.Reason,
 		Message:   e.Message,
 		Metadata:  e.Metadata,
-		Retryable: new(e.Retryable()),
+		Retryable: new(e.PropagatedRetryable()),
 	})
 	if merr != nil {
 		// errorBody contains only strings and a bool, so this cannot happen
