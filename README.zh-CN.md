@@ -7,8 +7,8 @@ servex 是面向 Go 微服务的工具库，核心提供协议无关的契约和
 如 gRPC、Redis 和 OpenTelemetry，位于
 [servex-contrib](https://github.com/nostosx/servex-contrib)。
 
-当前版本为 v1.1.1，已发布的 v1 版本保持公开 API 兼容，具体变更见
-[CHANGELOG.md](CHANGELOG.md)。可运行的 HTTP 和 gRPC 程序位于独立的
+当前版本为 v1.2.0。次版本可能包含不兼容的 API 变更，每项变更及迁移方式都列在
+[CHANGELOG.md](CHANGELOG.md) 中；补丁版本不改变 API。可运行的 HTTP 和 gRPC 程序位于独立的
 [servex-examples](https://github.com/nostosx/servex-examples) 项目。
 
 ## 开始使用
@@ -16,11 +16,11 @@ servex 是面向 Go 微服务的工具库，核心提供协议无关的契约和
 需要 Go 1.27.3。在应用模块根目录安装：
 
 ```sh
-go get github.com/nostosx/servex@v1.1.1
+go get github.com/nostosx/servex@v1.2.0
 ```
 
 kitx v1.0.0 从 Go 模块代理解析，无需并排检出仓库或添加本地替换。
-核心标签不带目录前缀，例如 `v1.1.1`。
+核心标签不带目录前缀，例如 `v1.2.0`。
 
 ## 设计原则
 
@@ -106,7 +106,7 @@ nil handler 属于编程错误。完整中间件实现和顺序验证见
 mkdir servex-demo
 cd servex-demo
 go mod init example.com/servex-demo
-go get github.com/nostosx/servex@v1.1.1
+go get github.com/nostosx/servex@v1.2.0
 mkdir server client
 ```
 
@@ -136,28 +136,27 @@ type User struct {
 	Name string `json:"name"`
 }
 
-func getUser(_ context.Context, req any) (any, error) {
-	r := req.(*GetUser)
-	if r.ID <= 0 {
+func getUser(_ context.Context, req *GetUser) (*User, error) {
+	if req.ID <= 0 {
 		return nil, errorx.New(errorx.InvalidArgument, "INVALID_ID", "id must be positive")
 	}
-	return &User{ID: r.ID, Name: "alice"}, nil
+	return &User{ID: req.ID, Name: "alice"}, nil
 }
 
 func run() error {
 	var a *app.App
 	srv := httpx.NewServer(
-		httpx.Address("127.0.0.1:8000"),
-		httpx.ReadHeaderTimeout(5*time.Second),
-		httpx.ReadTimeout(10*time.Second),
-		httpx.WriteTimeout(10*time.Second),
-		httpx.IdleTimeout(time.Minute),
-		httpx.MaxBodyBytes(64<<10),
+		httpx.WithAddress("127.0.0.1:8000"),
+		httpx.WithReadHeaderTimeout(5*time.Second),
+		httpx.WithReadTimeout(10*time.Second),
+		httpx.WithWriteTimeout(10*time.Second),
+		httpx.WithIdleTimeout(time.Minute),
+		httpx.WithMaxBodyBytes(64<<10),
 		// GET /readyz answers 200 only while the App is running.
-		httpx.Health(health.CheckerFunc(func(ctx context.Context) error { return a.Check(ctx) })),
+		httpx.WithHealth(health.CheckerFunc(func(ctx context.Context) error { return a.Check(ctx) })),
 	)
 	// {id} and query parameters bind to the JSON fields of GetUser.
-	httpx.Route[GetUser](srv, "GET /v1/users/{id}", getUser)
+	httpx.RouteFunc(srv, "GET /v1/users/{id}", getUser)
 
 	a = app.New(app.WithHooks(srv))
 	ctx, stop := app.SignalContext(context.Background())
@@ -231,7 +230,18 @@ func main() {
 
 需要服务注册时，将
 `discovery.Registration(registrar, discovery.Instance{Name: "user"}, srv)`
-放在 `app.WithHooks` 的服务端 Hook 之后。这样端口打开后才注册，关闭前先注销。
+放在 `app.WithHooks` 的服务端 Hook 之后，这样端口打开后才注册。`Instance.Weight`
+设置实例在客户端选择时的相对权重。注册 Hook 实现可选的 `Drain(ctx) error` 方法：App
+停止时先逆序排空各 Hook，即注销实例；然后等待 `app.WithStopDelay`，让服务端处理完进行中的
+请求；最后才停止各 Hook。排空失败时，Hook 的 `Stop` 会再重试一次注销。
+
+同一 App 中的每个服务端、消费者和 worker 应使用 `httpx.WithName`、`broker.WithName`
+或 `jobqueue.WithName` 设置各自的 Hook 名称。消费者默认名为 `consumer:<topic>`，
+有消费组时为 `consumer:<topic>:<group>`。实现方通过 `broker.ReadySubscriber` 或
+`jobqueue.ReadyRunner` 选择加入（内存实现均已加入）时，消费者或 worker 在订阅建立或
+开始处理后才完成启动，其 Hook 同时参与就绪检查。
+`database.Hook(name, db, database.WithReadiness(false))` 保留启动时的 ping，但不让数据库
+参与就绪检查，适用于数据库不可用时仍能处理部分请求的服务。
 
 中间件使用 `endpoint.Middleware`，按传入顺序执行，首项为最外层。使用
 servex-contrib 中间件时，建议顺序为：
@@ -244,14 +254,47 @@ consumer: recovery -> tracing -> logging -> metrics -> handler
 
 HTTP 端点中间件在路由匹配并绑定请求体之后执行。需要在读取请求体前拒绝请求的检查
 （如认证和限流），以及需要同时观测 404、请求体超限 413 和绑定失败的 `net/http`
-观测组件，应使用 `httpx.HTTPMiddleware(...)`。它包裹整个服务端 Handler，包括
+观测组件，应使用 `httpx.WithHTTPMiddleware(...)`。它包裹整个服务端 Handler，包括
 `HandleHTTP` 路由和健康探针；首项为最外层。
 
-HTTP 错误响应体携带 `retryable`，即 `errorx` 的实际重试标记，因此显式的
-`WithRetryable` 可以跨服务传递；客户端收到不含该字段的响应体时使用错误码默认值。
+HTTP 错误响应体携带 `retryable`，即提供给调用方的重试标记。客户端从其他服务解码的错误
+标记为远端错误（`errorx.WithRemote`）：该客户端自身的重试中间件仍可重试，但返回这种错误
+（包括用 `%w` 包装后）的服务端会将其报告为不可重试（`PropagatedRetryable`）。只有紧邻
+故障的一跳重试，层层重试的调用链不会成倍放大到达故障服务的请求。处理函数对远端错误
+调用 `WithRetryable` 即由本服务作出决定，标记按设置值发送。客户端收到不含该字段的响应体
+时使用错误码默认值。
 客户端传输失败仅在未取得连接，或请求按 `net/http` 规则可重放（GET、HEAD、OPTIONS、
 TRACE，或带有 `Idempotency-Key`/`X-Idempotency-Key` 请求头）时才是可重试的
 `Unavailable`；否则请求可能已经执行，`Unavailable` 错误被显式标记为不可重试。
+
+## 类型化端点
+
+`endpoint.Typed` 把具体请求、响应类型的函数适配为 `endpoint.Endpoint`；请求类型不符时
+返回 `*endpoint.TypeError`，服务端将其报告为 500 `Unknown`；请求为 nil 时传入零值。
+`httpx.RouteFunc` 注册这种函数，请求绑定到 `*Req`：
+
+```go
+httpx.RouteFunc(srv, "GET /v1/users/{id}", func(ctx context.Context, req *GetUser) (*User, error) {
+	return users.Get(ctx, req.ID)
+})
+```
+
+同一适配器可以把 `cqrs` 处理器接到任意传输、消费者或 worker，无需经由 `any` 转换：
+
+```go
+httpx.Route[CreateProduct](srv, "POST /v1/products", endpoint.Typed(createProduct.Handle))
+```
+
+其中 `createProduct` 为 `cqrs.Command[*CreateProduct, Product]`。
+
+## 客户端节点
+
+`transport.WithNodeObserver(fn)` 在客户端节点集合变化时回调，按 `Addr`、`Weight` 与
+`Metadata` 比较。首次回调发生在 `NewClient` 返回之前；之后随服务发现更新逐次回调，
+传入深拷贝，`Close` 返回后不再回调。可用于同步有状态的选择器或指标；回调中不得调用 `Close`。
+
+指标记录方法接收被度量操作的 context（`Counter.Add(ctx, v)`、`Gauge.Set(ctx, v)`、
+`Histogram.Observe(ctx, v)`），以便指标实现关联当前 span。
 
 ## HTTP 限制与自定义响应
 
@@ -259,12 +302,12 @@ TRACE，或带有 `Idempotency-Key`/`X-Idempotency-Key` 请求头）时才是可
 
 ```go
 srv := httpx.NewServer(
-	httpx.ReadHeaderTimeout(5*time.Second),
-	httpx.ReadTimeout(30*time.Second),
-	httpx.WriteTimeout(30*time.Second),
-	httpx.IdleTimeout(60*time.Second),
-	httpx.MaxHeaderBytes(1<<20),
-	httpx.MaxBodyBytes(8<<20),
+	httpx.WithReadHeaderTimeout(5*time.Second),
+	httpx.WithReadTimeout(30*time.Second),
+	httpx.WithWriteTimeout(30*time.Second),
+	httpx.WithIdleTimeout(60*time.Second),
+	httpx.WithMaxHeaderBytes(1<<20),
+	httpx.WithMaxBodyBytes(8<<20),
 )
 ```
 
@@ -272,7 +315,7 @@ srv := httpx.NewServer(
 负数禁用继承；零值请求头大小使用标准库默认值。由其他 `http.Server` 托管 Handler 时，
 应在该服务器上配置传输选项。连接超时不等于处理函数的执行截止时间。
 
-`MaxBodyBytes` 限制 `Handle` 和 `Route` 的完整请求体，包含 multipart 边界
+`WithMaxBodyBytes` 限制 `Handle` 和 `Route` 的完整请求体，包含 multipart 边界
 及没有请求工厂的路由。默认值为 `httpx.DefaultMaxBodyBytes`（4 MiB，与 gRPC 默认消息
 大小一致），上传更大内容时需调高。已知长度可提前拒绝，剩余内容在执行端点前以有界内存
 读取。非正数禁用此限制。检测到超限时返回 HTTP 413 JSON，错误为 `InvalidArgument` 和
@@ -282,8 +325,8 @@ Multipart 文件在端点执行和响应编码后清理。
 通过路由响应编码器自定义成功状态码、响应头、Cookie 和响应体：
 
 ```go
-httpx.Route[GetUser](srv, "POST /v1/users", getUser,
-	httpx.ResponseEncoder(func(w http.ResponseWriter, r *http.Request, reply any) error {
+httpx.RouteFunc(srv, "POST /v1/users", getUser,
+	httpx.WithResponseEncoder(func(w http.ResponseWriter, r *http.Request, reply any) error {
 		data, err := json.Marshal(reply)
 		if err != nil {
 			return err
@@ -306,10 +349,10 @@ nil 返回 204。尽可能在写入响应前返回编码错误：响应提交前
 
 ## 配置校验与更新
 
-普通配置加载使用 `config.New(ctx, sources...)`；需要拒绝无效初始值和重载时，使用校验器：
+`config.New(ctx, sources, opts...)` 加载并合并各配置源；需要拒绝无效初始值和重载时，添加校验器：
 
 ```go
-cfg, err := config.NewWithOptions(ctx, []config.Source{config.Env("APP_")},
+cfg, err := config.New(ctx, []config.Source{config.Env("APP_")},
 	config.WithValidator(func(ctx context.Context, candidate *config.Snapshot) error {
 		var settings struct {
 			Port int `json:"port"`
@@ -333,10 +376,10 @@ if err != nil {
 配置的 `Reload`。跨字段一致性读取使用 `cfg.Snapshot()`；`Value` 和 `Unmarshal`
 复制配置容器。源应提供嵌套映射、列表和标量，不接受任意可变 Go 对象图。
 
-`Watch` 保留成功回调；观察失败重载使用：
+`Watch` 在每次重载被接受后调用回调；添加重载错误处理器可同时观察失败的重载：
 
 ```go
-err = cfg.WatchWithOptions(ctx, func(current *config.Config) {
+err = cfg.Watch(ctx, func(current *config.Config) {
 	apply(current.Snapshot())
 }, config.WithReloadErrorHandler(func(err error) {
 	report(err)

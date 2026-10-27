@@ -9,8 +9,9 @@ standard library and [kitx](https://github.com/nostosx/kitx). Implementations
 that need third-party SDKs, such as gRPC, Redis and OpenTelemetry, live in
 [servex-contrib](https://github.com/nostosx/servex-contrib).
 
-The current release is v1.1.1. Published v1 releases preserve public API
-compatibility; see [CHANGELOG.md](CHANGELOG.md).
+The current release is v1.2.0. Minor releases may contain breaking API
+changes; each one is listed with its migration in [CHANGELOG.md](CHANGELOG.md).
+Patch releases do not change the API.
 
 Runnable HTTP and gRPC programs live in the separate
 [servex-examples](https://github.com/nostosx/servex-examples) project.
@@ -20,11 +21,11 @@ Runnable HTTP and gRPC programs live in the separate
 Requires Go 1.27.3. Add servex to your application module:
 
 ```sh
-go get github.com/nostosx/servex@v1.1.1
+go get github.com/nostosx/servex@v1.2.0
 ```
 
 kitx v1.0.0 resolves from the Go module proxy. No sibling checkout or local
-replacement is needed. Core tags have no directory prefix: `v1.1.1`.
+replacement is needed. Core tags have no directory prefix: `v1.2.0`.
 
 ## Design principles
 
@@ -130,7 +131,7 @@ To try the following service in a new directory, initialize an application modul
 mkdir servex-demo
 cd servex-demo
 go mod init example.com/servex-demo
-go get github.com/nostosx/servex@v1.1.1
+go get github.com/nostosx/servex@v1.2.0
 mkdir server client
 ```
 
@@ -160,28 +161,27 @@ type User struct {
 	Name string `json:"name"`
 }
 
-func getUser(_ context.Context, req any) (any, error) {
-	r := req.(*GetUser)
-	if r.ID <= 0 {
+func getUser(_ context.Context, req *GetUser) (*User, error) {
+	if req.ID <= 0 {
 		return nil, errorx.New(errorx.InvalidArgument, "INVALID_ID", "id must be positive")
 	}
-	return &User{ID: r.ID, Name: "alice"}, nil
+	return &User{ID: req.ID, Name: "alice"}, nil
 }
 
 func run() error {
 	var a *app.App
 	srv := httpx.NewServer(
-		httpx.Address("127.0.0.1:8000"),
-		httpx.ReadHeaderTimeout(5*time.Second),
-		httpx.ReadTimeout(10*time.Second),
-		httpx.WriteTimeout(10*time.Second),
-		httpx.IdleTimeout(time.Minute),
-		httpx.MaxBodyBytes(64<<10),
+		httpx.WithAddress("127.0.0.1:8000"),
+		httpx.WithReadHeaderTimeout(5*time.Second),
+		httpx.WithReadTimeout(10*time.Second),
+		httpx.WithWriteTimeout(10*time.Second),
+		httpx.WithIdleTimeout(time.Minute),
+		httpx.WithMaxBodyBytes(64<<10),
 		// GET /readyz answers 200 only while the App is running.
-		httpx.Health(health.CheckerFunc(func(ctx context.Context) error { return a.Check(ctx) })),
+		httpx.WithHealth(health.CheckerFunc(func(ctx context.Context) error { return a.Check(ctx) })),
 	)
 	// {id} and query parameters bind to the JSON fields of GetUser.
-	httpx.Route[GetUser](srv, "GET /v1/users/{id}", getUser)
+	httpx.RouteFunc(srv, "GET /v1/users/{id}", getUser)
 
 	a = app.New(app.WithHooks(srv))
 	ctx, stop := app.SignalContext(context.Background())
@@ -257,12 +257,26 @@ another terminal. It prints `alice`. Stop the server with Ctrl+C.
 
 To make the service discoverable, add
 `discovery.Registration(registrar, discovery.Instance{Name: "user"}, srv)`
-after the servers in `app.WithHooks`: hooks start in order and stop in reverse,
-so the instance is registered after the port is open and deregistered before
-it closes.
+after the servers in `app.WithHooks`: hooks start in order, so the instance is
+registered after the port is open. `Instance.Weight` sets its relative
+selection weight for clients. The registration hook implements the optional
+`Drain(ctx) error` hook method: when the App stops, it first drains hooks in
+reverse order, which deregisters the instance, then waits for
+`app.WithStopDelay` while servers finish in-flight requests, and only then
+stops the hooks. A failed drain is retried once by the hook's `Stop`.
+
+Give each server, consumer and worker of an App its own hook name with
+`httpx.WithName`, `broker.WithName` or `jobqueue.WithName`. Consumers default
+to `consumer:<topic>`, or `consumer:<topic>:<group>` for a consumer group.
+A consumer or worker whose implementation opts in through
+`broker.ReadySubscriber` or `jobqueue.ReadyRunner`, as the in-memory ones do,
+starts only once it is subscribed or processing; its hook also takes part in
+readiness. `database.Hook(name, db, database.WithReadiness(false))` keeps the
+start-time ping but leaves the database out of readiness, for services that
+can still serve some requests while it is down.
 
 Middleware is an `endpoint.Middleware` applied in the order written
-(`httpx.Middleware(...)`, `httpx.WithClientMiddleware(...)`,
+(`httpx.WithMiddleware(...)`, `httpx.WithClientMiddleware(...)`,
 `broker.WithMiddleware(...)`). The recommended orders, using the
 servex-contrib middleware, are:
 
@@ -276,16 +290,57 @@ HTTP endpoint middleware runs after the request has been routed and its body
 bound. Checks that must reject a request before its body is read, such as
 authentication and rate limiting, and `net/http` instrumentation that should
 also observe 404s, body-limit 413s and binding failures belong in
-`httpx.HTTPMiddleware(...)`. It wraps the whole server handler, including
+`httpx.WithHTTPMiddleware(...)`. It wraps the whole server handler, including
 `HandleHTTP` routes and health probes; its first entry is outermost.
 
-The HTTP error body carries `retryable`, the effective `errorx` retry flag, so
-an explicit `WithRetryable` survives a service hop; clients that receive a body
-without it fall back to the code's default. A client transport failure is a
+The HTTP error body carries `retryable`, the retry flag for the caller. Errors
+that a client decodes from another service are marked remote
+(`errorx.WithRemote`): the client's own retry middleware may still retry them,
+but a server returning such an error, even wrapped with `%w`, reports it as not
+retryable (`PropagatedRetryable`). Only the hop next to the failure retries, so
+a chain of retrying services does not multiply the attempts reaching the
+failing one. A handler that sets `WithRetryable` on a remote error makes that
+decision its own, and the flag is sent as set. Clients that receive a body
+without the field fall back to the code's default. A client transport failure is a
 retryable `Unavailable` only when no connection was obtained or the request is
 replayable under `net/http` rules (GET, HEAD, OPTIONS, TRACE, or an
 `Idempotency-Key`/`X-Idempotency-Key` header). Otherwise the request may have
 executed, and the `Unavailable` error is explicitly not retryable.
+
+## Typed endpoints
+
+`endpoint.Typed` adapts a function with concrete request and response types to
+an `endpoint.Endpoint`; a request of another type fails with
+`*endpoint.TypeError`, which servers report as 500 `Unknown`, and a nil request
+passes the zero value. `httpx.RouteFunc` registers such a function with its
+request bound into `*Req`:
+
+```go
+httpx.RouteFunc(srv, "GET /v1/users/{id}", func(ctx context.Context, req *GetUser) (*User, error) {
+	return users.Get(ctx, req.ID)
+})
+```
+
+The same adapter bridges a `cqrs` handler to any transport, consumer or
+worker without conversions through `any`:
+
+```go
+httpx.Route[CreateProduct](srv, "POST /v1/products", endpoint.Typed(createProduct.Handle))
+```
+
+where `createProduct` is a `cqrs.Command[*CreateProduct, Product]`.
+
+## Client nodes
+
+`transport.WithNodeObserver(fn)` reports the node set of a client whenever it
+changes, comparing `Addr`, `Weight` and `Metadata`. The first call happens
+before `NewClient` returns; later calls follow discovery updates one at a
+time, with a deep copy, and stop once `Close` returns. Use it to keep a
+stateful selector or a metric in sync; it must not call `Close`.
+
+Metric recording methods take the context of the measured operation
+(`Counter.Add(ctx, v)`, `Gauge.Set(ctx, v)`, `Histogram.Observe(ctx, v)`), so
+meters can link observations to the active span.
 
 ## HTTP limits and custom responses
 
@@ -293,12 +348,12 @@ Server options configure the native `http.Server` used by `Start`:
 
 ```go
 srv := httpx.NewServer(
-	httpx.ReadHeaderTimeout(5*time.Second),
-	httpx.ReadTimeout(30*time.Second),
-	httpx.WriteTimeout(30*time.Second),
-	httpx.IdleTimeout(60*time.Second),
-	httpx.MaxHeaderBytes(1<<20),
-	httpx.MaxBodyBytes(8<<20),
+	httpx.WithReadHeaderTimeout(5*time.Second),
+	httpx.WithReadTimeout(30*time.Second),
+	httpx.WithWriteTimeout(30*time.Second),
+	httpx.WithIdleTimeout(60*time.Second),
+	httpx.WithMaxHeaderBytes(1<<20),
+	httpx.WithMaxBodyBytes(8<<20),
 )
 ```
 
@@ -308,7 +363,7 @@ A zero header limit uses the standard library default. When another
 `http.Server` hosts `srv` as a handler, configure transport settings there.
 Connection timeouts do not impose an endpoint execution deadline.
 
-`MaxBodyBytes` limits the entire body of `Handle` and `Route` requests,
+`WithMaxBodyBytes` limits the entire body of `Handle` and `Route` requests,
 including multipart framing and routes without a request factory. The default
 is `httpx.DefaultMaxBodyBytes` (4 MiB, the gRPC default message size); raise it
 for larger uploads. It checks known lengths early and reads any remainder before
@@ -321,8 +376,8 @@ available through endpoint execution and response encoding, then are cleaned up.
 Use a route encoder for a custom success status, headers, cookies or body:
 
 ```go
-httpx.Route[GetUser](srv, "POST /v1/users", getUser,
-	httpx.ResponseEncoder(func(w http.ResponseWriter, r *http.Request, reply any) error {
+httpx.RouteFunc(srv, "POST /v1/users", getUser,
+	httpx.WithResponseEncoder(func(w http.ResponseWriter, r *http.Request, reply any) error {
 		data, err := json.Marshal(reply)
 		if err != nil {
 			return err
@@ -348,11 +403,11 @@ Encoding runs after endpoint middleware returns.
 
 ## Validated configuration updates
 
-Keep `config.New(ctx, sources...)` for ordinary loading. To reject invalid
-initial values and updates, construct with validators:
+`config.New(ctx, sources, opts...)` loads and merges sources. To reject
+invalid initial values and updates, add validators:
 
 ```go
-cfg, err := config.NewWithOptions(ctx, []config.Source{config.Env("APP_")},
+cfg, err := config.New(ctx, []config.Source{config.Env("APP_")},
 	config.WithValidator(func(ctx context.Context, candidate *config.Snapshot) error {
 		var settings struct {
 			Port int `json:"port"`
@@ -380,11 +435,11 @@ values. Validators must decode into local destinations and must not reenter
 Sources provide nested maps, lists and scalar values, rather than arbitrary
 mutable Go object graphs.
 
-`Watch` keeps its existing success callback. Use the additive API to observe
-failed reload attempts as well:
+`Watch` calls its callback after every accepted reload. Add a reload error
+handler to observe failed reload attempts as well:
 
 ```go
-err = cfg.WatchWithOptions(ctx, func(current *config.Config) {
+err = cfg.Watch(ctx, func(current *config.Config) {
 	apply(current.Snapshot())
 }, config.WithReloadErrorHandler(func(err error) {
 	report(err)

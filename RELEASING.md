@@ -1,6 +1,9 @@
 # Releasing servex
 
-Core releases use semantic versions. This document is a manual release procedure;
+Core releases use `vMAJOR.MINOR.PATCH` versions. Patch releases keep the public
+API; starting with v1.2.0, minor releases may change it, and every such change
+must appear under "Breaking changes" in the changelog with its migration.
+This document is a manual release procedure;
 the CI workflow validates changes and does not
 publish releases or create tags.
 
