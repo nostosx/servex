@@ -216,13 +216,22 @@ func (a *App) fail(name string, err error) {
 
 // Stop stops the App. In StateInit it moves directly to StateStopped and
 // returns nil. In StateRunning it enters StateStopping (from which point
-// Check fails), waits for the stop delay and then stops the hooks in reverse
-// order, each in its own goroutine. The whole procedure is bounded by
-// min(ctx, stop timeout); on expiry Stop stops waiting, calls no further hooks
-// and reports "app: stop timeout, unfinished hooks: [...]".
+// Check fails), then
 //
-// The App ends in StateFailed if any hook failed to stop or a runtime failure
-// was reported, otherwise in StateStopped. Stop is idempotent: concurrent and
+//  1. drains the hooks implementing Drain(ctx) error, one at a time in
+//     reverse order, so that they stop taking new work (for example by
+//     deregistering from service discovery) while every hook still runs;
+//  2. waits for the stop delay;
+//  3. stops the hooks in reverse order, each in its own goroutine.
+//
+// Drain errors ("app: drain hook %q: %w") do not stop the procedure; they
+// are joined with the stop errors. Hooks are drained only when stopping a
+// running App, not when rolling back a failed Start. The whole procedure is
+// bounded by min(ctx, stop timeout); on expiry Stop stops waiting, calls no
+// further hooks and reports "app: stop timeout, unfinished hooks: [...]".
+//
+// The App ends in StateFailed if any hook failed to drain or stop or a
+// runtime failure was reported, otherwise in StateStopped. Stop is idempotent: concurrent and
 // repeated calls return the result of the first one. If Start is still in
 // progress, Stop waits for it first; after a failed Start, Stop returns nil.
 // A caller whose ctx ends while waiting for another caller's Stop gets the
@@ -285,13 +294,55 @@ func (a *App) stop(ctx context.Context) error {
 	a.logger.Info("app stopping", "stop_delay", a.stopDelay)
 	ctx, cancel := a.stopContext(ctx)
 	defer cancel()
+	errs := a.drainHooks(ctx)
 	if a.stopDelay > 0 {
 		select {
 		case <-time.After(a.stopDelay):
 		case <-ctx.Done():
 		}
 	}
-	return errors.Join(a.stopHooks(ctx, a.hooks)...)
+	errs = append(errs, a.stopHooks(ctx, a.hooks)...)
+	return errors.Join(errs...)
+}
+
+// drainHooks calls Drain on the hooks implementing it, one at a time in
+// reverse order. A failing drain does not stop the procedure. Each call runs
+// in its own goroutine so a hook that ignores ctx cannot block the App past
+// ctx's end; once ctx has ended, the remaining hooks are not drained.
+func (a *App) drainHooks(ctx context.Context) []error {
+	var errs []error
+	for _, h := range slices.Backward(a.hooks) {
+		d, ok := h.(drainer)
+		if !ok {
+			continue
+		}
+		name := h.Name()
+		if err := ctx.Err(); err != nil {
+			a.logger.Error("hook drain skipped", "hook", name, "error", err)
+			return append(errs, fmt.Errorf("app: drain hook %q: %w", name, err))
+		}
+		begin := time.Now()
+		done := make(chan error, 1)
+		go func() { done <- d.Drain(ctx) }()
+		var err error
+		select {
+		case err = <-done:
+		case <-ctx.Done():
+			select {
+			case err = <-done:
+			default:
+				err = ctx.Err()
+			}
+		}
+		elapsed := time.Since(begin)
+		if err != nil {
+			a.logger.Error("hook drain failed", "hook", name, "duration", elapsed, "error", err)
+			errs = append(errs, fmt.Errorf("app: drain hook %q: %w", name, err))
+			continue
+		}
+		a.logger.Info("hook drained", "hook", name, "duration", elapsed)
+	}
+	return errs
 }
 
 // stopContext bounds ctx by the configured stop timeout, if any.

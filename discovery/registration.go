@@ -18,7 +18,12 @@ import (
 // (empty, 0.0.0.0 or ::) with an address of this machine, appends the
 // resulting URLs to the copy's Endpoints and registers the copy, generating
 // an ID with uuid.NewV7 when ins.ID is empty. Start fails when any server or
-// URL is nil. On Stop it deregisters the instance registered by Start.
+// URL is nil. The hook implements the optional app Drain method: when a
+// running App stops, Drain deregisters the instance before the stop delay
+// and before any server stops, so clients stop picking it while in-flight
+// requests finish. Stop deregisters an instance that is still registered,
+// which retries a failed Drain once and covers the rollback of a failed
+// application start, where Drain is not called.
 //
 // Place the hook after the servers in the application so that their URLs
 // are valid when it starts.
@@ -83,18 +88,40 @@ func (g *registration) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop implements app.Hook. It is a no-op when nothing is registered.
+// Drain deregisters the instance. After a failure the instance stays
+// recorded as registered, so Stop tries once more.
+func (g *registration) Drain(ctx context.Context) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.deregisterLocked(ctx)
+}
+
+// Stop implements app.Hook. It deregisters the instance unless Drain
+// already did, and is a no-op when nothing is registered.
 func (g *registration) Stop(ctx context.Context) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	if g.registered == nil {
+	ins := g.registered
+	// Stop is the last attempt: forget the instance even if it fails.
+	defer func() {
+		if g.registered == ins {
+			g.registered = nil
+		}
+	}()
+	return g.deregisterLocked(ctx)
+}
+
+// deregisterLocked deregisters the registered instance, if any, and forgets
+// it on success. g.mu must be held.
+func (g *registration) deregisterLocked(ctx context.Context) error {
+	ins := g.registered
+	if ins == nil {
 		return nil
 	}
-	ins := g.registered
-	g.registered = nil
 	if err := g.r.Deregister(ctx, ins); err != nil {
 		return fmt.Errorf("discovery: deregister %q: %w", ins.Name, err)
 	}
+	g.registered = nil
 	return nil
 }
 

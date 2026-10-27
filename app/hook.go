@@ -11,6 +11,12 @@ import "context"
 //	                           triggers an overall stop that ends in StateFailed.
 //	                           A closed channel or a nil error is ignored.
 //	Check(ctx) error           takes part in the readiness aggregation of App.Check.
+//	Drain(ctx) error           stops taking new work before any hook stops. When
+//	                           a running App stops, it drains hooks one at a time
+//	                           in reverse order, then waits for the stop delay and
+//	                           only then calls Stop. Drain is not called when a
+//	                           failed Start is rolled back, so Stop must still
+//	                           release everything on its own.
 type Hook interface {
 	// Name identifies the hook in logs and errors.
 	Name() string
@@ -28,6 +34,11 @@ type errReporter interface {
 // readinessChecker is the optional readiness interface of a Hook.
 type readinessChecker interface {
 	Check(ctx context.Context) error
+}
+
+// drainer is the optional drain interface of a Hook.
+type drainer interface {
+	Drain(ctx context.Context) error
 }
 
 // NewHook builds a Hook from functions. start and stop may be nil, in which
