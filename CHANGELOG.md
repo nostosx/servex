@@ -3,7 +3,9 @@
 User-visible changes are recorded here. Published v1 releases
 preserve public API compatibility following [semantic versioning](https://semver.org).
 
-## Unreleased
+## v1.1.1
+
+Release date: not yet tagged.
 
 ### Added
 
@@ -42,6 +44,8 @@ preserve public API compatibility following [semantic versioning](https://semver
   now requires an idempotency key header or a custom retry predicate.
 - Custom `http.RoundTripper`s that do not report `httptrace` connection events
   are treated as possibly having sent the request.
+- Existing v1 APIs remain unchanged. Requires Go 1.27.3 and kitx v1.0.0;
+  no new module dependencies.
 
 ## v1.1.0
 
