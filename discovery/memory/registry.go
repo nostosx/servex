@@ -197,6 +197,7 @@ func clone(ins *discovery.Instance) *discovery.Instance {
 		ID:        ins.ID,
 		Name:      ins.Name,
 		Version:   ins.Version,
+		Weight:    ins.Weight,
 		Metadata:  maps.Clone(ins.Metadata),
 		Endpoints: slices.Clone(ins.Endpoints),
 	}

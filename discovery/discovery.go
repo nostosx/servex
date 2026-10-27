@@ -14,6 +14,9 @@ type Instance struct {
 	Name string
 	// Version is the service version.
 	Version string
+	// Weight is the relative selection weight of the instance, copied to the
+	// selector nodes built from it. Zero means the selector's default weight.
+	Weight int
 	// Metadata holds arbitrary instance attributes.
 	Metadata map[string]string
 	// Endpoints lists the URLs the instance serves on, such as
@@ -27,6 +30,7 @@ func (ins *Instance) clone() *Instance {
 		ID:        ins.ID,
 		Name:      ins.Name,
 		Version:   ins.Version,
+		Weight:    ins.Weight,
 		Metadata:  maps.Clone(ins.Metadata),
 		Endpoints: slices.Clone(ins.Endpoints),
 	}

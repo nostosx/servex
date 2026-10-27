@@ -37,6 +37,7 @@ type clientOptions struct {
 	selector   selector.Selector
 	scheme     string
 	middleware []endpoint.Middleware
+	observer   func([]selector.Node)
 }
 
 // WithDiscoverer sets the Discoverer used to resolve "discovery:///<name>"
@@ -69,6 +70,21 @@ func WithMiddleware(m ...endpoint.Middleware) ClientOption {
 	return func(o *clientOptions) { o.middleware = append(o.middleware, m...) }
 }
 
+// WithNodeObserver sets fn to be called with the node set of the Client
+// whenever it changes, for example to keep a stateful selector or a metric in
+// sync with service discovery. Two node sets are equal when they hold the
+// same nodes, compared by Addr, Weight and Metadata, in the same order.
+//
+// The first call happens before NewClient returns, with the initial node set,
+// possibly empty. Later calls come from the background watch goroutine of a
+// discovery target; a direct target has no later calls. Calls are serialized
+// and never made after Close has returned. fn receives a deep copy it may
+// keep. fn must return promptly, since it delays applying the next update,
+// and must not call Close. A nil fn disables observation.
+func WithNodeObserver(fn func([]selector.Node)) ClientOption {
+	return func(o *clientOptions) { o.observer = fn }
+}
+
 // Client resolves a target into a set of nodes and builds endpoints that
 // select one node per call. All methods are safe for concurrent use when the
 // supplied selector, invokers and middleware are. Create a Client with NewClient;
@@ -80,6 +96,11 @@ type Client struct {
 
 	// nodes is the current node set; it is replaced, never mutated.
 	nodes atomic.Pointer[[]selector.Node]
+
+	// observer and observed are used only by the goroutine applying updates:
+	// NewClient for direct targets, the watch goroutine otherwise.
+	observer func([]selector.Node)
+	observed *[]selector.Node // last set passed to observer; nil before the first call
 
 	watcher   discovery.Watcher // nil for direct targets
 	closed    chan struct{}     // closed by Close
@@ -113,6 +134,7 @@ func NewClient(ctx context.Context, target string, opts ...ClientOption) (*Clien
 	c := &Client{
 		selector:   o.selector,
 		middleware: slices.Clone(o.middleware),
+		observer:   o.observer,
 		closed:     make(chan struct{}),
 	}
 	if u.Scheme != discoveryScheme {
@@ -120,7 +142,7 @@ func NewClient(ctx context.Context, target string, opts ...ClientOption) (*Clien
 			return nil, fmt.Errorf("transport: invalid target %q: want <scheme>://host:port or discovery:///<name>", target)
 		}
 		c.scheme = u.Scheme
-		c.nodes.Store(&[]selector.Node{{Addr: u.Host}})
+		c.store([]selector.Node{{Addr: u.Host}})
 		return c, nil
 	}
 
@@ -198,7 +220,7 @@ func (c *Client) watch(first chan<- error) {
 }
 
 // update replaces the node set with the endpoints of instances that match
-// the client scheme.
+// the client scheme, carrying each instance's Weight and Metadata.
 func (c *Client) update(instances []*discovery.Instance) {
 	nodes := make([]selector.Node, 0, len(instances))
 	for _, ins := range instances {
@@ -210,10 +232,45 @@ func (c *Client) update(instances []*discovery.Instance) {
 			if err != nil || u.Scheme != c.scheme || u.Host == "" {
 				continue
 			}
-			nodes = append(nodes, selector.Node{Addr: u.Host, Metadata: maps.Clone(ins.Metadata)})
+			nodes = append(nodes, selector.Node{Addr: u.Host, Weight: ins.Weight, Metadata: maps.Clone(ins.Metadata)})
 		}
 	}
+	c.store(nodes)
+}
+
+// store publishes nodes and reports them to the observer if they differ from
+// the set it saw last. It must only be called by the goroutine applying
+// updates.
+func (c *Client) store(nodes []selector.Node) {
 	c.nodes.Store(&nodes)
+	if c.observer == nil {
+		return
+	}
+	if c.observed != nil && slices.EqualFunc(*c.observed, nodes, equalNodes) {
+		return
+	}
+	select {
+	case <-c.closed:
+		return
+	default:
+	}
+	c.observed = &nodes
+	c.observer(cloneNodes(nodes))
+}
+
+// equalNodes reports whether a and b describe the same node.
+func equalNodes(a, b selector.Node) bool {
+	return a.Addr == b.Addr && a.Weight == b.Weight && maps.Equal(a.Metadata, b.Metadata)
+}
+
+// cloneNodes returns a deep copy of nodes.
+func cloneNodes(nodes []selector.Node) []selector.Node {
+	out := make([]selector.Node, len(nodes))
+	for i, n := range nodes {
+		out[i] = n
+		out[i].Metadata = maps.Clone(n.Metadata)
+	}
+	return out
 }
 
 // Endpoint builds an endpoint for operation. A call
