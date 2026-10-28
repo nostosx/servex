@@ -1,8 +1,19 @@
 # Contributing
 
+Install [Task](https://taskfile.dev/docs/installation/) v3.53.1 outside the module,
+matching CI, and put its binary on `PATH`:
+
+```sh
+go install github.com/go-task/task/v3/cmd/task@v3.53.1
+```
+
+Run `task --list` to discover tasks. Tool overrides accept environment variables or
+Task arguments, for example `task check GO="/path with spaces/go"`.
+Checks force `GOWORK=off`; `check`, `lint` and `vulncheck` do not apply source fixes.
+
 ## Setup
 
-Use Go 1.27.3, GNU Make and a shell available to Make. Race tests require a
+Use Go 1.27.3, Task v3.53.1 and a shell available to Task. Race tests require a
 supported platform and a working C toolchain. Install tools outside this
 module using Go 1.27.3. kitx v1.0.0 resolves from the Go module proxy;
 no sibling kitx checkout is needed.
@@ -20,21 +31,28 @@ configuration to work around a checkout-specific toolchain problem.
 Run from the repository root:
 
 ```sh
-make check
-make lint
-make vulncheck
+task check
+task lint
+task vulncheck
 ```
 
-The Makefile exports `GOWORK=off`. `check` rejects formatting, modernizer and
+`Taskfile.yml` exports `GOWORK=off`. `check` rejects formatting, modernizer and
 module-tidy changes, vets and builds normal and `integration` configurations,
 checks the standard-library and kitx dependency boundary, then runs shuffled race tests
 without test-result caching. `lint` and `vulncheck` also inspect both build
 configurations. No command in this check sequence starts external services.
 
-`make fmt`, `make fix` and `make tidy` modify files explicitly; inspect their
+`task fmt`, `task fix` and `task tidy` modify files explicitly; inspect their
 changes before rerunning checks. `GO`, `GOFMT`, `GOLANGCI_LINT` and `GOVULNCHECK`
 can select installed executables without changing module dependencies.
 The core has no service-backed integration tests.
+
+The eight public commands are `check`, `test`, `build`, `lint`, `vulncheck`,
+`fmt`, `fix` and `tidy`; running `task` selects `check`. `task test RACE=true`
+enables the race detector. `task test COVER=true` also writes `coverage.out`
+and prints function coverage; coverage implies race. Both flags accept only
+`true` or `false`. Quality substeps remain internal to `check`, so `task --list`
+and `task --list-all` show the same public commands.
 
 ## Changes
 
@@ -59,8 +77,10 @@ does not need a release-note entry. Report sensitive issues through
 The core owns protocol-independent contracts and one reference implementation
 per contract. Additional implementations and SDKs belong in servex-contrib;
 runnable applications belong in servex-examples. Logging keeps `log/slog` and
-SQL access keeps `database/sql`. Constructors are wired explicitly, without
-registries, DI containers or global mutable state.
+SQL access keeps `database/sql`. Constructors receive dependencies explicitly.
+The optional `di` package defines registration and resolution contracts only;
+container implementations live in servex-contrib. Keep containers at application
+composition roots; no global registries or implicit registration are allowed.
 
 ### Allowed imports
 
@@ -80,6 +100,7 @@ transitive imports.
 | `observability/metrics` | none |
 | `observability/tracing` | none |
 | `app` | none |
+| `di` | none |
 | `internal/host` | none |
 | `internal/runhook` | none |
 | `config` | `encoding` |
@@ -108,8 +129,8 @@ standard-library-only.
 
 [`internal/archtest`](internal/archtest/archtest_test.go) rejects undocumented
 packages, forbidden imports and stale table entries. Update its `allowed` and
-`allowedKitx` tables with this section when boundaries change. `make deps-check`
-checks module and package graphs; `make check` includes it and architecture tests.
+`allowedKitx` tables with this section when boundaries change. The internal dependency
+step checks module and package graphs; `task check` includes it and architecture tests.
 Contrib modules import public core packages and never each other. Their
 `middleware` and `selector` modules share the standard-library, servex and kitx
 boundary; other modules own their SDK dependencies.

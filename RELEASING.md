@@ -19,8 +19,8 @@ publish releases or create tags.
 3. Verify the published kitx v1.0.0 dependency without local replacements.
    Confirm that kitx is the only external module requirement, the license is
    included and release contents contain no credentials or local artifacts.
-4. With Go 1.27.3 and the documented tool versions, run `make check`,
-   `make lint` and `make vulncheck`. Require successful CI for the exact
+4. With Go 1.27.3 and the documented tool versions, run `task check`,
+   `task lint` and `task vulncheck`. Require successful CI for the exact
    release revision. Record service or platform coverage separately from
    compilation-only checks.
 

@@ -7,7 +7,7 @@ servex 是面向 Go 微服务的工具库，核心提供协议无关的契约和
 如 gRPC、Redis 和 OpenTelemetry，位于
 [servex-contrib](https://github.com/nostosx/servex-contrib)。
 
-当前版本为 v1.2.0。次版本可能包含不兼容的 API 变更，每项变更及迁移方式都列在
+当前版本为 v1.3.0。次版本可能包含不兼容的 API 变更，每项变更及迁移方式都列在
 [CHANGELOG.md](CHANGELOG.md) 中；补丁版本不改变 API。可运行的 HTTP 和 gRPC 程序位于独立的
 [servex-examples](https://github.com/nostosx/servex-examples) 项目。
 
@@ -16,11 +16,11 @@ servex 是面向 Go 微服务的工具库，核心提供协议无关的契约和
 需要 Go 1.27.3。在应用模块根目录安装：
 
 ```sh
-go get github.com/nostosx/servex@v1.2.0
+go get github.com/nostosx/servex@v1.3.0
 ```
 
 kitx v1.0.0 从 Go 模块代理解析，无需并排检出仓库或添加本地替换。
-核心标签不带目录前缀，例如 `v1.2.0`。
+核心标签不带目录前缀，例如 `v1.3.0`。
 
 ## 设计原则
 
@@ -32,15 +32,19 @@ kitx v1.0.0 从 Go 模块代理解析，无需并排检出仓库或添加本地�
    如 `*/memory`、`config/file` 和 `transport/httpx`。其他实现放入 servex-contrib。
 2. **保留标准接口。** 日志使用 `*slog.Logger`，SQL 使用 `database/sql`。
    servex 补充观测、生命周期和健康检查，调用方继续使用原生类型。
-3. **显式装配。** 不提供全局注册表、DI 容器、自动中间件排序、`init()` 注册或全局可变状态。
-   直接调用构造函数，执行顺序由代码决定。
+3. **显式装配。** 不提供全局注册表、自动中间件排序、`init()` 注册或全局可变状态。
+   构造函数显式接收依赖；可选的 `di` 契约由 contrib 实现，容器仅用于应用装配入口。
+
+`di` 只定义契约和类型化辅助函数，核心不实现第二套 DI 引擎。该能力自 v1.3.0 起提供，
+`servex-contrib/di/do` 提供 samber/do/v2 实现。
+注册可集中在一个 `bootstrap.go`，业务包继续使用普通构造函数。
 
 导入分层由 `internal/archtest` 检查。精确的包级导入表和 kitx 白名单见
 [CONTRIBUTING.md](CONTRIBUTING.md#dependency-boundaries)。
 
 | 层级 | 包 | 允许依赖 |
 |---|---|---|
-| 基础 | `app`、`cqrs`、`endpoint`、`errorx`、`metadata`、`health`、`encoding`、`observability/*` | 仅标准库，彼此不依赖 |
+| 基础 | `app`、`di`、`cqrs`、`endpoint`、`errorx`、`metadata`、`health`、`encoding`、`observability/*` | 仅标准库，彼此不依赖 |
 | 契约 | `config`、`selector`、`discovery`、`storage/*`、`messaging/*` | 按包级白名单使用基础能力 |
 | 传输 | `transport` | 基础、契约与 `kitx/backoff` |
 | 实现 | `*/memory`、`config/file`、`transport/httpx` 等 | 自身契约及允许的上层包，不依赖其他实现 |
@@ -50,6 +54,7 @@ kitx v1.0.0 从 Go 模块代理解析，无需并排检出仓库或添加本地�
 | 目录 | 职责 |
 |---|---|
 | `app` | Hook 顺序启动、逆序停止、启动失败回滚、就绪检查和运行失败处理；`SignalContext` 处理 SIGINT/SIGTERM |
+| `di` | 可选的 `Container` / `Resolver` 契约和类型化 `Provide`、`Supply`、`Resolve`、`MustResolve`；contrib 提供实现，自 v1.3.0 起提供 |
 | `cqrs` | 类型化应用 `Handler`、`Command`、`Query` 与显式中间件组合；自 v1.1.0 起提供 |
 | `endpoint` | 协议无关的 `Endpoint`、`Middleware` 和 `Chain` |
 | `errorx` | 结构化错误码、原因、元数据和重试标记，不绑定协议 |
@@ -106,7 +111,7 @@ nil handler 属于编程错误。完整中间件实现和顺序验证见
 mkdir servex-demo
 cd servex-demo
 go mod init example.com/servex-demo
-go get github.com/nostosx/servex@v1.2.0
+go get github.com/nostosx/servex@v1.3.0
 mkdir server client
 ```
 
@@ -425,19 +430,23 @@ owner 应属于服务或显式作用域，生命周期长于单次请求。等�
 使用 Go 1.27.3，在仓库根目录执行：
 
 ```sh
-make check
-make lint
-make vulncheck
+task check
+task lint
+task vulncheck
 ```
 
 `check` 拒绝格式、现代化和 tidy 差异，检查普通及 `integration` 配置的 vet 和构建，
 校验标准库与 kitx 依赖边界，并运行随机顺序的 race 测试。`lint` 和 `vulncheck`
 也覆盖两种构建配置。所有目标使用 `GOWORK=off`。`fmt`、`fix` 和 `tidy` 会修改文件。
 
+公开入口只有 `check`、`test`、`build`、`lint`、`vulncheck`、`fmt`、`fix`、`tidy`；
+裸 `task` 默认执行 `check`。用 `task test RACE=true` 开启 race，用 `task test COVER=true`
+运行 race 并生成 `coverage.out`、打印函数覆盖率。细项检查在内部执行，两种任务列表都只显示公开入口。
+
 工具安装、变更要求和精确导入表见 [CONTRIBUTING.md](CONTRIBUTING.md)，未发布变更见
 [CHANGELOG.md](CHANGELOG.md)，发布门槛见 [RELEASING.md](RELEASING.md)，
 敏感问题见 [SECURITY.md](SECURITY.md)。核心无需服务端集成测试环境；CI 使用相同的
-Make 目标。本地通过不代表远程 CI 已通过或模块已发布。
+Task 目标。本地通过不代表远程 CI 已通过或模块已发布。
 
 ## 许可证
 

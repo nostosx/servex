@@ -9,7 +9,7 @@ standard library and [kitx](https://github.com/nostosx/kitx). Implementations
 that need third-party SDKs, such as gRPC, Redis and OpenTelemetry, live in
 [servex-contrib](https://github.com/nostosx/servex-contrib).
 
-The current release is v1.2.0. Minor releases may contain breaking API
+The current release is v1.3.0. Minor releases may contain breaking API
 changes; each one is listed with its migration in [CHANGELOG.md](CHANGELOG.md).
 Patch releases do not change the API.
 
@@ -21,11 +21,11 @@ Runnable HTTP and gRPC programs live in the separate
 Requires Go 1.27.3. Add servex to your application module:
 
 ```sh
-go get github.com/nostosx/servex@v1.2.0
+go get github.com/nostosx/servex@v1.3.0
 ```
 
 kitx v1.0.0 resolves from the Go module proxy. No sibling checkout or local
-replacement is needed. Core tags have no directory prefix: `v1.2.0`.
+replacement is needed. Core tags have no directory prefix: `v1.3.0`.
 
 ## Design principles
 
@@ -41,9 +41,13 @@ three rules decide where code belongs:
 2. **Do not wrap existing standard interfaces.** Logging is `*slog.Logger`,
    SQL is `database/sql`. servex only adds instrumentation, lifecycle and
    health checks around them; callers keep the native types.
-3. **Explicit over implicit.** No global service locator, no DI container, no
-   automatic middleware ordering, no `init()`, no global mutable state.
-   Wiring is calling constructors; order is the order you write.
+3. **Explicit over implicit.** No global service locator, automatic middleware
+   ordering, `init()` registration or global mutable state. Constructors receive
+   dependencies explicitly. Optional DI contracts live in `di`; container
+   implementations belong to contrib and stay at the composition root.
+
+The optional `di` package is contract-only: the core does not implement a
+second DI engine. The contract is available since v1.3.0.
 
 Packages follow a layered import rule, checked by `internal/archtest`.
 [CONTRIBUTING.md](CONTRIBUTING.md#dependency-boundaries) lists the exact allowed
@@ -51,7 +55,7 @@ imports and approved kitx packages:
 
 | Layer | Packages | May import |
 |---|---|---|
-| Foundation | `app` `cqrs` `endpoint` `errorx` `metadata` `health` `encoding` `observability/*` | standard library only; not each other |
+| Foundation | `app` `di` `cqrs` `endpoint` `errorx` `metadata` `health` `encoding` `observability/*` | standard library only; not each other |
 | Contracts | `config` `selector` `discovery` `storage/*` `messaging/*` | foundation |
 | Transport | `transport` | foundation, contracts, `kitx/backoff` |
 | Implementations | reference subpackages such as `*/memory`, `config/file`, `transport/httpx` | their contract and the layers above, never another implementation |
@@ -61,6 +65,7 @@ imports and approved kitx packages:
 | Directory | Purpose |
 |---|---|
 | `app` | Lifecycle container. Starts `Hook`s in registration order, stops them in reverse, rolls back a failed start, aggregates readiness (`App.Check`) and stops on runtime failures. `SignalContext` handles SIGINT/SIGTERM. |
+| `di` | Optional `Container`/`Resolver` contracts and typed `Provide`, `Supply`, `Resolve`, `MustResolve` helpers. Implementations live in contrib; available since v1.3.0. |
 | `cqrs` | Typed application `Handler`, `Command`, `Query` and explicit middleware composition; available since v1.1.0. |
 | `endpoint` | `Endpoint`, `Middleware` and `Chain`: the protocol-agnostic unit of work shared by servers, clients, consumers and workers. |
 | `errorx` | Structured errors: a `Code` mirroring the gRPC codes, a machine-readable reason, metadata and a retryable flag. Knows no protocol. |
@@ -131,7 +136,7 @@ To try the following service in a new directory, initialize an application modul
 mkdir servex-demo
 cd servex-demo
 go mod init example.com/servex-demo
-go get github.com/nostosx/servex@v1.2.0
+go get github.com/nostosx/servex@v1.3.0
 mkdir server client
 ```
 
@@ -485,6 +490,11 @@ semantics.
 
 ## servex-contrib
 
+Optional dependency injection uses `di.Container` at the application composition
+root. `servex-contrib/di/do` implements it with samber/do/v2. Business constructors
+remain ordinary Go functions, and registration can stay in one `bootstrap.go`.
+Use the published core and contrib module versions independently.
+
 [servex-contrib](https://github.com/nostosx/servex-contrib) holds the
 implementations with third-party dependencies, one Go module per dependency
 set (`github.com/nostosx/servex-contrib/<capability>/<impl>`), plus the
@@ -498,23 +508,28 @@ hand or used directly as an fx or wire provider.
 Use Go 1.27.3 and run from the repository root:
 
 ```sh
-make check
-make lint
-make vulncheck
+task check
+task lint
+task vulncheck
 ```
 
 `check` rejects formatting, modernizer and tidy changes, vets and builds both
 normal and `integration` configurations, enforces the standard-library and kitx
 dependency boundary, and runs shuffled race tests. `lint` and `vulncheck` inspect both
 configurations. All targets disable workspace files with `GOWORK=off`.
-`make fmt`, `make fix` and `make tidy` explicitly modify files.
+`task fmt`, `task fix` and `task tidy` explicitly modify files.
+
+The eight public commands are `check`, `test`, `build`, `lint`, `vulncheck`,
+`fmt`, `fix` and `tidy`; `task` defaults to `check`. Use `task test RACE=true`
+for race tests or `task test COVER=true` for race tests with `coverage.out`
+and function coverage. Internal check steps are hidden from both task lists.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for tool installation and change
 requirements and the exact import table,
 [CHANGELOG.md](CHANGELOG.md) for unreleased changes and
 [RELEASING.md](RELEASING.md) for release gates. Sensitive issues follow
 [SECURITY.md](SECURITY.md). The core has no service-backed integration tests.
-CI uses the same Make targets; local success does not prove remote CI or
+CI uses the same Task targets; local success does not prove remote CI or
 published-module availability.
 
 ## License

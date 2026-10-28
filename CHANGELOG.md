@@ -4,6 +4,20 @@ User-visible changes are recorded here. Patch releases do not change the
 public API. Starting with v1.2.0, minor releases may contain breaking API
 changes; each one is listed under "Breaking changes" with its migration.
 
+## Unreleased
+
+## v1.3.0
+
+Release date: 2026-10-28.
+
+- Add optional `di.Resolver`, `di.Container` and typed `Provide`, `Supply`,
+  `Resolve` and `MustResolve` helpers. The core defines contracts only;
+  container implementations and lifecycle management remain in contrib.
+
+- Development tooling: replace Make entry points with Task v3.53.1 in local
+  checks, CI and contribution/release instructions. Use `task check`, `task lint`
+  and `task vulncheck`; check coverage, build tags and failure gates are preserved.
+
 ## v1.2.0
 
 Release date: 2026-10-27.
