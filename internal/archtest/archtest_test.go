@@ -38,6 +38,7 @@ var allowed = map[string][]string{
 	"observability/metrics": nil,
 	"observability/tracing": nil,
 	"app":                   nil,
+	"di":                    nil,
 	"internal/host":         nil,
 	"internal/runhook":      nil,
 	"config":                {"encoding"},
