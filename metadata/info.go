@@ -14,7 +14,7 @@ const (
 )
 
 // Info describes a single call. On the server side it is written by the
-// transport or consumer; on the client side by transport.Client.
+// transport or consumer; on the client side by the contrib shared client.
 type Info struct {
 	// Kind is the call direction.
 	Kind Kind

@@ -62,22 +62,22 @@ type Propagator interface {
 // spanKey is the context key under which the current Span is stored.
 type spanKey struct{}
 
+// spanValue permits an explicit nil span to shadow a parent's span.
+type spanValue struct{ span Span }
+
 // ContextWithSpan returns a copy of ctx carrying s as the current span.
-// A nil s is stored as a no-op span.
+// A nil s explicitly clears the current span without choosing a backend.
 func ContextWithSpan(ctx context.Context, s Span) context.Context {
-	if s == nil {
-		s = noopSpan{}
-	}
-	return context.WithValue(ctx, spanKey{}, s)
+	return context.WithValue(ctx, spanKey{}, spanValue{span: s})
 }
 
-// SpanFromContext returns the current span in ctx. It never returns nil: if
-// ctx carries no span, a no-op span is returned.
+// SpanFromContext returns the current span in ctx, or nil when no span is
+// present or ctx is nil. Applications choose no-op implementations explicitly.
 func SpanFromContext(ctx context.Context) Span {
 	if ctx != nil {
-		if s, ok := ctx.Value(spanKey{}).(Span); ok && s != nil {
-			return s
+		if value, ok := ctx.Value(spanKey{}).(spanValue); ok {
+			return value.span
 		}
 	}
-	return noopSpan{}
+	return nil
 }

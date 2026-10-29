@@ -2,14 +2,18 @@
 
 [English](README.md) | 简体中文
 
-servex 是面向 Go 微服务的工具库，核心提供协议无关的契约和每个契约的一个参考实现，
-仅依赖标准库与 [kitx](https://github.com/nostosx/kitx)。依赖第三方 SDK 的实现，
+servex 是面向 Go 微服务的工具库，核心提供协议无关的契约、公共数据模型和显式运行机制，
+当前核心源码仅依赖标准库。依赖第三方 SDK 的实现，
 如 gRPC、Redis 和 OpenTelemetry，位于
 [servex-contrib](https://github.com/nostosx/servex-contrib)。
 
 当前版本为 v1.3.0。次版本可能包含不兼容的 API 变更，每项变更及迁移方式都列在
 [CHANGELOG.md](CHANGELOG.md) 中；补丁版本不改变 API。可运行的 HTTP 和 gRPC 程序位于独立的
 [servex-examples](https://github.com/nostosx/servex-examples) 项目。
+
+当前源码包含尚未发布的后端迁移：具体实现与原 import 路径的映射、
+显式 Codec／Selector 装配及 Span 空值规则见 [迁移说明](BACKEND-MIGRATION.md)。
+已发布版本继续使用其发布时的目录结构。
 
 ## 开始使用
 
@@ -19,7 +23,7 @@ servex 是面向 Go 微服务的工具库，核心提供协议无关的契约和
 go get github.com/nostosx/servex@v1.3.0
 ```
 
-kitx v1.0.0 从 Go 模块代理解析，无需并排检出仓库或添加本地替换。
+当前核心源码没有外部模块依赖；已发布的 servex v1.3.0 使用代理中的 kitx v1.0.0。
 核心标签不带目录前缀，例如 `v1.3.0`。
 
 ## 设计原则
@@ -27,9 +31,8 @@ kitx v1.0.0 从 Go 模块代理解析，无需并排检出仓库或添加本地�
 核心模块及测试只允许使用标准库和 kitx；CI 拒绝其他外部依赖，包括 `golang.org/x/...`。
 代码归属遵循以下约束：
 
-1. **核心提供契约，按能力保留参考实现。** 配置和日志仅定义契约。 简单实现位于契约包中，例如 `encoding.JSON`、
-   `selector.Random` 和空观测实现；有状态的实现位于子目录，
-   如 `*/memory` 和 `transport/httpx`。其他实现放入 servex-contrib。
+1. **具体实现位于 contrib。** 核心保留契约、数据模型和最小框架运行时：App、health.Group、注册生命周期与轻量 Consumer/Worker 适配；
+   HTTP、SQL、内存后端、JSON、随机选择器和空观测后端统一位于 servex-contrib。
 2. **配置和日志只定义契约。** `config` 与 `logger` 不包含具体实现；
    Viper、slog、Zap 实现位于 servex-contrib，由应用显式注入。SQL 使用 `database/sql`。
    servex 补充观测、生命周期和健康检查，调用方继续使用原生类型。
@@ -47,8 +50,8 @@ kitx v1.0.0 从 Go 模块代理解析，无需并排检出仓库或添加本地�
 |---|---|---|
 | 基础 | `app`、`logger`、`di`、`cqrs`、`endpoint`、`errorx`、`metadata`、`health`、`encoding`、`observability/*` | 按包级白名单；app 可依赖 logger |
 | 契约 | `config`、`selector`、`discovery`、`storage/*`、`messaging/*` | 按包级白名单使用基础能力 |
-| 传输 | `transport` | 基础、契约与 `kitx/backoff` |
-| 实现 | `*/memory`、`transport/httpx` 等 | 自身契约及允许的上层包，不依赖其他实现 |
+| 传输契约 | `transport` | `app` |
+| 框架运行时 | App、health.Group、注册生命周期与轻量 Consumer/Worker 适配 | 显式核心契约，不选择后端 |
 
 ## 包概览
 
@@ -64,17 +67,16 @@ kitx v1.0.0 从 Go 模块代理解析，无需并排检出仓库或添加本地�
 | `errorx` | 结构化错误码、原因、元数据和重试标记，不绑定协议 |
 | `metadata` | 上下文中的请求元数据与调用描述 |
 | `health` | 健康检查契约和并发检查组 |
-| `encoding` | Codec 契约和 JSON 实现 |
+| `encoding` | Codec 契约；具体编解码器位于 contrib |
 | `config` | `Source`、`Watchable`、`Reader`、`Config` 契约；加载、解码、快照发布由 contrib 实现 |
 | `logger` | 后端无关的 `Logger`、`Level` 契约，无默认或全局后端 |
-| `observability/metrics`、`observability/tracing` | 后端无关的指标、追踪契约和空实现 |
-| `discovery`、`discovery/memory` | 注册、查询、订阅、注册 Hook 和进程内注册中心 |
-| `selector` | 节点选择契约和加权随机实现 |
-| `transport`、`transport/httpx` | 服务端与客户端契约、节点选择、HTTP 路由、绑定、编码协商和健康端点 |
-| `storage/cache`、`storage/cache/memory` | 字节缓存契约、共享回源 Loader 和内存 TTL/LRU 适配器 |
-| `storage/database` | 普通 `*sql.DB` 的驱动层观测、生命周期、健康检查和事务助手 |
-| `messaging/broker`、`messaging/broker/memory` | 发布订阅契约、消费者 Hook 和进程内消息代理 |
-| `messaging/jobqueue`、`messaging/jobqueue/memory` | 任务契约、延迟/重试/唯一性选项、工作者 Hook 和进程内队列 |
+| `observability/metrics`、`observability/tracing` | 后端无关的指标、追踪契约与上下文辅助 |
+| `discovery` | 注册、查询、订阅契约与注册生命周期适配；内存注册中心位于 contrib |
+| `selector` | 节点选择契约；具体算法位于 contrib |
+| `transport` | Server、Invoker 与函数适配器契约；共享客户端引擎位于 contrib/transport/client |
+| `storage/cache` | 字节缓存契约与未命中错误；Loader 位于 contrib/cache/loader，内存后端位于 contrib/cache/memory |
+| `messaging/broker` | 发布订阅契约与轻量消费者 Hook；内存后端位于 contrib/broker/memory |
+| `messaging/jobqueue` | 任务契约、选项与轻量工作者 Hook；内存后端位于 contrib/jobqueue/memory |
 | `internal/...` | 私有的依赖检查、发现地址选择和消费者生命周期助手 |
 
 ## 类型化应用处理器
@@ -134,7 +136,7 @@ import (
 	"github.com/nostosx/servex/app"
 	"github.com/nostosx/servex/errorx"
 	"github.com/nostosx/servex/health"
-	"github.com/nostosx/servex/transport/httpx"
+	"github.com/nostosx/servex-contrib/transport/httpx"
 )
 
 type GetUser struct {
@@ -203,7 +205,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/nostosx/servex/transport/httpx"
+	"github.com/nostosx/servex-contrib/transport/httpx"
 )
 
 type GetUser struct {
@@ -299,9 +301,9 @@ httpx.Route[CreateProduct](srv, "POST /v1/products", endpoint.Typed(createProduc
 
 ## 客户端节点
 
-`transport.WithNodeObserver(fn)` 在客户端节点集合变化时回调，按 `Addr`、`Weight` 与
-`Metadata` 比较。首次回调发生在 `NewClient` 返回之前；之后随服务发现更新逐次回调，
-传入深拷贝，`Close` 返回后不再回调。可用于同步有状态的选择器或指标；回调中不得调用 `Close`。
+共享客户端的 target 解析、服务发现监听、节点观察与调用编排位于
+[contrib/transport/client](https://github.com/nostosx/servex-contrib/tree/main/transport/client)，HTTP/gRPC 共同复用。
+核心只提供 Server、Invoker 等契约。
 
 指标记录方法接收被度量操作的 context（`Counter.Add(ctx, v)`、`Gauge.Set(ctx, v)`、
 `Histogram.Observe(ctx, v)`），以便指标实现关联当前 span。
@@ -376,26 +378,11 @@ server := httpx.NewServer(httpx.WithLogger(log))
 原来的 `*slog.Logger` 需要显式包装。这些变更尚未发布，
 开发验证需使用匹配的核心与 contrib 源码；发布时先核心、后适配器。
 
-## 缓存 Loader 生命周期
+## 缓存加载
 
-创建 Loader 时传入 owner 上下文和正数共享执行超时：
-
-```go
-loader, err := cache.NewLoader[User](owner, backend, 5*time.Second, cache.WithTTL(time.Minute))
-if err != nil {
-	return err
-}
-defer loader.Close()
-```
-
-owner 应属于服务或显式作用域，生命周期长于单次请求。等待者给 `Get` 传入请求上下文，
-可以独立取消；回源继承 owner 的值和取消信号，不继承发起请求的上下文值。
-键必须包含租户与授权范围，共享凭据显式传入。`Close` 取消并等待回调，但不关闭后端。
-执行超时、owner 取消和关闭都要求回调及后端响应取消；应用仍需限制同时活跃的不同键数。
-
-同键回调必须可互换。共享结果中的指针、切片和映射不可修改。禁止在回源回调中调用
-`Close` 或重新进入同一个键，否则会死锁。缓存失败回退和写回语义见
-[Loader.Get](storage/cache/loader.go)。
+核心只提供字节缓存 Cache 契约。read-through、singleflight、owner 取消、超时、
+缓存错误降级与写回策略位于 [contrib/cache/loader](https://github.com/nostosx/servex-contrib/tree/main/cache/loader)。
+构造时显式传入 Codec，并调用 Close 取消和等待共享执行。
 
 ## servex-contrib
 

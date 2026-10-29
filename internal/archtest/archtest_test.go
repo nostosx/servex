@@ -27,7 +27,7 @@ const anyCorePackage = "*"
 // TestContractOnlyPackages keeps loading, decoding and logger backends out of
 // packages whose ownership is explicitly limited to contract declarations.
 func TestContractOnlyPackages(t *testing.T) {
-	for _, name := range []string{"config", "logger", "transport/sse", "transport/websocket", "transport/rpc"} {
+	for _, name := range []string{"config", "logger", "encoding", "selector", "observability/metrics", "storage/cache", "transport", "transport/sse", "transport/websocket", "transport/rpc"} {
 		dir := filepath.Join("..", "..", name)
 		entries, err := os.ReadDir(dir)
 		if err != nil {
@@ -44,6 +44,12 @@ func TestContractOnlyPackages(t *testing.T) {
 			}
 			for _, declaration := range file.Decls {
 				if function, ok := declaration.(*ast.FuncDecl); ok {
+					// Function adapters are part of the contract; client execution is not.
+					if name == "transport" && function.Name.Name == "Invoke" && function.Recv != nil && len(function.Recv.List) == 1 {
+						if receiver, ok := function.Recv.List[0].Type.(*ast.Ident); ok && receiver.Name == "InvokerFunc" {
+							continue
+						}
+					}
 					t.Errorf("%s contains implementation %s; move it to servex-contrib", path, function.Name)
 				}
 			}
@@ -55,8 +61,7 @@ func TestContractOnlyPackages(t *testing.T) {
 // the core packages its non-test files may import. It mirrors the table in
 // CONTRIBUTING.md; keep the two in sync.
 //
-// Test files may import any core package (for example a reference
-// implementation used as a fixture), but like everything else in the core
+// Test files may import any core package as a fixture, but like the rest of the core
 // module they may only depend on the standard library, the module itself and kitx.
 var allowed = map[string][]string{
 	"endpoint":              nil,
@@ -75,37 +80,19 @@ var allowed = map[string][]string{
 	"config":                nil,
 	"selector":              {"errorx"},
 	"discovery":             {"app", "internal/host"},
-	"discovery/memory":      {"discovery"},
-	"storage/cache":         {"encoding"},
-	"storage/cache/memory":  {"storage/cache"},
-	"storage/database":      {"app", "observability/metrics", "observability/tracing"},
+	"storage/cache":         nil,
 	"messaging/broker":      {"app", "endpoint", "metadata", "errorx", "internal/runhook"},
-	"messaging/broker/memory": {
-		"messaging/broker", "endpoint", "errorx", "metadata",
-	},
-	"messaging/jobqueue": {"app", "endpoint", "metadata", "errorx", "internal/runhook"},
-	"messaging/jobqueue/memory": {
-		"messaging/jobqueue", "endpoint", "errorx", "metadata",
-	},
-	"transport": {"app", "endpoint", "metadata", "errorx", "selector", "discovery"},
-	"transport/httpx": {
-		"transport", "app", "endpoint", "metadata", "errorx",
-		"encoding", "health", "selector", "discovery", "logger",
-	},
-	"transport/sse":       nil,
-	"transport/websocket": nil,
-	"transport/rpc":       nil,
-	"internal/archtest":   {anyCorePackage},
+	"messaging/jobqueue":    {"app", "endpoint", "metadata", "errorx", "internal/runhook"},
+	"transport":             {"app"},
+	"transport/sse":         nil,
+	"transport/websocket":   nil,
+	"transport/rpc":         nil,
+	"internal/archtest":     {anyCorePackage},
 }
 
 // allowedKitx records the external packages used by each core package.
 // It does not grant blanket access to other kitx packages.
-var allowedKitx = map[string][]string{
-	"storage/cache":             {"github.com/nostosx/kitx/singleflight"},
-	"storage/cache/memory":      {"github.com/nostosx/kitx/ttlcache"},
-	"messaging/jobqueue/memory": {"github.com/nostosx/kitx/backoff"},
-	"transport":                 {"github.com/nostosx/kitx/backoff"},
-}
+var allowedKitx = map[string][]string{}
 
 // pkg is the subset of the "go list -json" output used by the tests.
 type pkg struct {
@@ -211,8 +198,8 @@ func TestImportTable(t *testing.T) {
 			continue
 		}
 		for _, imp := range p.Imports {
-			if imp == "log/slog" {
-				t.Errorf("%s imports a concrete logger backend; depend on logger.Logger", rel)
+			if imp == "log/slog" || imp == "database/sql" || imp == "database/sql/driver" || imp == "encoding/json" || imp == "encoding/json/v2" {
+				t.Errorf("%s imports concrete backend %s; depend on a core contract", rel, imp)
 			}
 
 			if strings.HasPrefix(imp, "github.com/nostosx/kitx/") && !slices.Contains(allowedKitx[rel], imp) {
@@ -253,6 +240,21 @@ func TestTableEntriesAreCorePackages(t *testing.T) {
 			if _, ok := allowed[dep]; !ok {
 				t.Errorf("%s allows %s, which is not in the table", rel, dep)
 			}
+		}
+	}
+}
+
+// TestMovedBackendsStayOutsideCore prevents old import paths from regrowing
+// implementation packages after their tests and backends move to contrib.
+func TestMovedBackendsStayOutsideCore(t *testing.T) {
+	for _, name := range []string{
+		"transport/httpx", "storage/database", "storage/cache/memory",
+		"discovery/memory", "messaging/broker/memory", "messaging/jobqueue/memory",
+		"transport/client.go", "storage/cache/loader.go",
+	} {
+		path := filepath.Join("..", "..", name)
+		if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("backend path %s must remain outside core (stat: %v)", name, err)
 		}
 	}
 }

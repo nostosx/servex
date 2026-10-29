@@ -16,9 +16,10 @@ publish releases or create tags.
    [CONTRIBUTING.md](CONTRIBUTING.md#dependency-boundaries) and relevant
    regressions. Check both READMEs against the actual API. Move the selected entries from `Unreleased` into the matching version
    section in [CHANGELOG.md](CHANGELOG.md) and record the release date.
-3. Verify the published kitx v1.0.0 dependency without local replacements.
-   Confirm that kitx is the only external module requirement, the license is
-   included and release contents contain no credentials or local artifacts.
+3. Verify the module graph without local replacements. The current core has
+   no external requirements after Loader and Client extraction; any future
+   kitx adoption must follow the documented package allowlist. Confirm the
+   license is included and release contents contain no credentials or local artifacts.
 4. With Go 1.27.3 and the documented tool versions, run `task check`,
    `task lint` and `task vulncheck`. Require successful CI for the exact
    release revision. Record service or platform coverage separately from

@@ -15,8 +15,8 @@ Checks force `GOWORK=off`; `check`, `lint` and `vulncheck` do not apply source f
 
 Use Go 1.27.3, Task v3.53.1 and a shell available to Task. Race tests require a
 supported platform and a working C toolchain. Install tools outside this
-module using Go 1.27.3. kitx v1.0.0 resolves from the Go module proxy;
-no sibling kitx checkout is needed.
+module using Go 1.27.3. The current core source has no external module
+requirements; no sibling checkout is needed.
 
 ```sh
 go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0
@@ -74,12 +74,22 @@ does not need a release-note entry. Report sensitive issues through
 
 ## Dependency boundaries
 
-The core owns protocol-independent contracts and one reference implementation
-per contract. Additional implementations and SDKs belong in servex-contrib;
+The core owns protocol-independent contracts, data models, small function
+adapters and a minimal framework runtime. The allowed runtime consists of App
+lifecycle management, health.Group aggregation, discovery registration lifecycle
+and the thin Consumer/Worker lifecycle and middleware adapters. These are
+intentional core responsibilities, not implementations awaiting extraction.
+Concrete backends, selection algorithms, cache loading policies and the shared
+client engine belong in servex-contrib;
 runnable applications belong in servex-examples. Configuration and logging
 are contract-only: use `config.Config` and `logger.Logger`; production core
 packages must not import `log/slog`. Backend implementations belong in contrib.
-SQL access keeps `database/sql`. Constructors receive dependencies explicitly.
+SQL integration lives in contrib/database/sql. Target resolution, discovery-watch
+recovery, node snapshots and invocation orchestration live in contrib/transport/client.
+Read-through, shared-load cancellation, cache-error fallback and write-back live
+in contrib/cache/loader. Both require explicit dependencies; client.New requires
+a Selector and loader.New requires a Codec. Core transport and storage/cache
+contain contracts and function adapters only; they expose no Client or Loader.
 The optional `di` package defines registration and resolution contracts only;
 container implementations live in servex-contrib. Keep containers at application
 composition roots; no global registries or implicit registration are allowed.
@@ -109,48 +119,42 @@ transitive imports.
 | `config` | none |
 | `selector` | `errorx` |
 | `discovery` | `app`, `internal/host` |
-| `discovery/memory` | `discovery` |
-| `storage/cache` | `encoding` |
-| `storage/cache/memory` | `storage/cache` |
-| `storage/database` | `app`, `observability/metrics`, `observability/tracing` |
+| `storage/cache` | none |
 | `messaging/broker` | `app`, `endpoint`, `metadata`, `errorx`, `internal/runhook` |
-| `messaging/broker/memory` | `messaging/broker`, `endpoint`, `errorx`, `metadata` |
 | `messaging/jobqueue` | `app`, `endpoint`, `metadata`, `errorx`, `internal/runhook` |
-| `messaging/jobqueue/memory` | `messaging/jobqueue`, `endpoint`, `errorx`, `metadata` |
-| `transport` | `app`, `endpoint`, `metadata`, `errorx`, `selector`, `discovery` |
-| `transport/httpx` | `transport`, `app`, `endpoint`, `metadata`, `errorx`, `encoding`, `health`, `selector`, `discovery`, `logger` |
+| `transport` | `app` |
 | `transport/sse` | none (contracts only) |
 | `transport/websocket` | none (contracts only) |
 | `transport/rpc` | none (contracts only) |
 | `internal/archtest` | any core package |
 
-Approved external imports are `kitx/backoff` for `transport` and
-`messaging/jobqueue/memory`, `kitx/singleflight` for `storage/cache`, and
-`kitx/ttlcache` for `storage/cache/memory`, under `github.com/nostosx/`.
+There are currently no approved production kitx imports in core. The client
+engine uses kitx/backoff and Loader uses kitx/singleflight in their contrib modules.
 Tests may use any core package as a fixture. All source and tests must depend
 only on the standard library, this module and kitx; `golang.org/x` packages
-count as third party. kitx is the sole external module and must remain
-standard-library-only.
+count as third party. kitx is the only eligible external library and must remain
+standard-library-only; this source revision currently needs no external module.
 
 [`internal/archtest`](internal/archtest/archtest_test.go) rejects undocumented
 packages, forbidden imports and stale table entries. Update its `allowed` and
 `allowedKitx` tables with this section when boundaries change. The internal dependency
 step checks module and package graphs; `task check` includes it and architecture tests.
-Contrib production packages import public core packages and never each other.
+Contrib production packages may depend on explicit foundational implementations
+(JSON codecs, no-op telemetry and selectors). Keep these dependencies directed;
+never import contrib from core or create package cycles.
 Backend interoperability tests may import another contrib module; keep that
 dependency confined to tests. Their
-`middleware` and `selector` modules share the standard-library, servex and kitx
-boundary; other modules own their SDK dependencies.
+`selector` stays within the standard-library, core and kitx boundary.
+`middleware` additionally permits only the two no-op telemetry modules;
+other modules own their SDK dependencies.
 
 ### Ownership and concurrency
 
-Reuse kitx where behavior and ownership agree. Discovery-watch and in-memory
-job retries share exponential backoff; recovery and retry policy remain in
-servex. The in-memory cache adapts kitx/ttlcache and retains byte copies, error
-mapping, the 10,000-entry default, unlimited-capacity options and clock injection.
-Stored slices stay private and immutable.
+Reuse kitx where behavior and ownership agree. Discovery-watch exponential
+backoff and last-known-node recovery belong to contrib/transport/client.
+In-memory retry/cache policies belong to their contrib modules.
 
-Cache Loader adapts kitx/singleflight.SharedGroup. Its owner context and
+Contrib Cache Loader adapts kitx/singleflight.SharedGroup. Its owner context and
 positive timeout bound shared work; `Close` cancels and joins it without
 closing the backend. Waiters cancel independently. Keys must include tenant
 and authorization scope; shared credentials come from explicit callback

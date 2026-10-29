@@ -1,4 +1,2 @@
-// Package cache defines a byte-oriented Cache contract and a generic Loader
-// that adds read-through loading, value encoding and duplicate-load
-// suppression on top of any Cache.
+// Package cache defines a byte-oriented cache contract.
 package cache

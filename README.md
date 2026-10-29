@@ -4,8 +4,7 @@ English | [简体中文](README.zh-CN.md)
 
 servex is a Go microservice toolkit built as a light core with pluggable
 implementations. This repository is the core: protocol-independent contracts,
-one reference implementation per contract, and shared primitives from the Go
-standard library and [kitx](https://github.com/nostosx/kitx). Implementations
+the minimal framework runtime, using the Go standard library. Implementations
 that need third-party SDKs, such as gRPC, Redis and OpenTelemetry, live in
 [servex-contrib](https://github.com/nostosx/servex-contrib).
 
@@ -16,6 +15,11 @@ Patch releases do not change the API.
 Runnable HTTP and gRPC programs live in the separate
 [servex-examples](https://github.com/nostosx/servex-examples) project.
 
+This source includes an unreleased backend migration. See
+[the migration guide](BACKEND-MIGRATION.md) for moved import paths, explicit
+Codec/Selector wiring and absent-span behavior. Published versions retain
+their release-time layout.
+
 ## Getting started
 
 Requires Go 1.27.3. Add servex to your application module:
@@ -24,8 +28,8 @@ Requires Go 1.27.3. Add servex to your application module:
 go get github.com/nostosx/servex@v1.3.0
 ```
 
-kitx v1.0.0 resolves from the Go module proxy. No sibling checkout or local
-replacement is needed. Core tags have no directory prefix: `v1.3.0`.
+This core source revision has no external module dependencies. Published
+servex v1.3.0 uses kitx v1.0.0 from the Go module proxy. Core tags have no directory prefix: `v1.3.0`.
 
 ## Design principles
 
@@ -33,12 +37,11 @@ The core module allows only the standard library and kitx, tests included.
 CI rejects other external dependencies, including `golang.org/x/...`. Beyond that,
 three rules decide where code belongs:
 
-1. **Core = contracts, with reference implementations where specified.** Configuration
-   and logging are contract-only. Trivial
-   implementations live in the contract package (`encoding.JSON`,
-   `selector.Random`, the no-op meter and tracer); stateful ones
-   live in a subdirectory (`*/memory`, `transport/httpx`).
-   Every further implementation goes to servex-contrib.
+1. **Concrete implementations live in contrib.** Core keeps contracts, data
+   types and a minimal framework runtime: App, health.Group, registration and
+   thin Consumer/Worker lifecycle adapters. HTTP, SQL, memory
+   backends, JSON, random selection, no-op telemetry, cache Loader and the shared
+   client engine live in servex-contrib.
 2. **Keep configuration and logging backend-independent.** `config` and
    `logger` define contracts only. Viper, slog and Zap implementations live
    in servex-contrib and are explicitly injected. SQL keeps `database/sql`.
@@ -58,8 +61,8 @@ imports and approved kitx packages:
 |---|---|---|
 | Foundation | `app` `logger` `di` `cqrs` `endpoint` `errorx` `metadata` `health` `encoding` `observability/*` | package allowlist; app may import logger |
 | Contracts | `config` `selector` `discovery` `storage/*` `messaging/*` | foundation |
-| Transport | `transport` | foundation, contracts, `kitx/backoff` |
-| Implementations | reference subpackages such as `*/memory`, `transport/httpx` | their contract and the layers above, never another implementation |
+| Transport contracts | `transport` | `app` |
+| Framework runtime | App, health.Group, registration and thin Consumer/Worker adapters | explicit core contracts; no backend selection |
 
 ## Packages
 
@@ -75,23 +78,17 @@ imports and approved kitx packages:
 | `errorx` | Structured errors: a `Code` mirroring the gRPC codes, a machine-readable reason, metadata and a retryable flag. Knows no protocol. |
 | `metadata` | Request metadata carried in the context: header-like `MD` and the call description `Info` (kind, protocol, operation, header). |
 | `health` | `Checker`, `CheckerFunc` and `Group`, which runs named checks concurrently. |
-| `encoding` | `Codec` interface and the JSON codec. |
+| `encoding` | `Codec` contract; codecs live in contrib. |
 | `config` | Configuration contracts: `Source`, `Watchable`, `Reader`, `Config`. No loader or decoder. |
 | `logger` | Backend-independent `Logger` and `Level`; no concrete or global backend. |
-| `observability/metrics` | Backend-neutral `Meter`, `Counter`, `Gauge`, `Histogram` and a no-op implementation. |
-| `observability/tracing` | Backend-neutral `Tracer`, `Span`, `Propagator` and no-op implementations. |
+| `observability/metrics` | Backend-neutral `Meter`, `Counter`, `Gauge`, `Histogram` contracts. |
+| `observability/tracing` | Backend-neutral `Tracer`, `Span`, `Propagator` contracts and context helpers. |
 | `discovery` | `Registrar`, `Discoverer`, `Watcher`, and `Registration`, a Hook that registers running servers. |
-| `discovery/memory` | In-process registry for tests, examples and single-process deployments. |
-| `selector` | `Selector`, `Node`, `Done` and the weighted `Random` selector. |
-| `transport` | `Server`, `Invoker` and `Client`, which picks a node per call from a fixed target or from service discovery. |
-| `transport/httpx` | `net/http` server and client: routing, request binding, codec negotiation, errorx-to-status mapping, `/livez` and `/readyz`. |
-| `storage/cache` | Byte-oriented `Cache` contract and the generic read-through `Loader[T]` using kitx shared execution, an explicit owner, timeout and Close. |
-| `storage/cache/memory` | Byte-copying adapter over kitx/ttlcache, with LRU and indexed per-entry TTL. |
-| `storage/database` | `database/sql` integration: driver-level tracing and metrics, a lifecycle Hook with health check, and the `Tx` helper. Returns plain `*sql.DB`. |
+| `selector` | `Selector`, `Node`, `Done` contracts; algorithms live in contrib. |
+| `transport` | `Server`, `Invoker` and `InvokerFunc` contracts; the shared client engine lives in contrib/transport/client. |
+| `storage/cache` | Byte-oriented `Cache` contract and miss error; read-through Loader lives in contrib/cache/loader. |
 | `messaging/broker` | `Message`, `Publisher`, `Subscriber` and `NewConsumer`, a Hook that runs a subscription. Handlers are endpoints. |
-| `messaging/broker/memory` | In-process broker. |
 | `messaging/jobqueue` | `Enqueuer`, `Runner`, enqueue options (delay, retry, uniqueness) and `NewWorker`, a Hook that runs job handlers. |
-| `messaging/jobqueue/memory` | In-process job queue. |
 | `internal/...` | Private dependency checks, discovery address selection and consumer lifecycle helpers. |
 
 ## Typed application handlers
@@ -158,7 +155,7 @@ import (
 	"github.com/nostosx/servex/app"
 	"github.com/nostosx/servex/errorx"
 	"github.com/nostosx/servex/health"
-	"github.com/nostosx/servex/transport/httpx"
+	"github.com/nostosx/servex-contrib/transport/httpx"
 )
 
 type GetUser struct {
@@ -229,7 +226,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/nostosx/servex/transport/httpx"
+	"github.com/nostosx/servex-contrib/transport/httpx"
 )
 
 type GetUser struct {
@@ -339,13 +336,12 @@ httpx.Route[CreateProduct](srv, "POST /v1/products", endpoint.Typed(createProduc
 
 where `createProduct` is a `cqrs.Command[*CreateProduct, Product]`.
 
-## Client nodes
+## Shared client engine
 
-`transport.WithNodeObserver(fn)` reports the node set of a client whenever it
-changes, comparing `Addr`, `Weight` and `Metadata`. The first call happens
-before `NewClient` returns; later calls follow discovery updates one at a
-time, with a deep copy, and stop once `Close` returns. Use it to keep a
-stateful selector or a metric in sync; it must not call `Close`.
+Target resolution, discovery watching, node observation and invocation orchestration
+live in [contrib/transport/client](https://github.com/nostosx/servex-contrib/tree/main/transport/client).
+HTTP and gRPC adapters share that implementation. The core supplies Server and
+Invoker contracts; it does not select or implement a client execution policy.
 
 Metric recording methods take the context of the measured operation
 (`Counter.Add(ctx, v)`, `Gauge.Set(ctx, v)`, `Histogram.Observe(ctx, v)`), so
@@ -431,32 +427,12 @@ backend. Existing `*slog.Logger` values must be wrapped explicitly.
 These changes are unreleased; use the matching core/contrib source revisions
 during development and publish the core before the adapters.
 
-## Cache Loader lifecycle
+## Cache loading
 
-Construct a Loader with an owner context and positive shared execution timeout:
-
-```go
-loader, err := cache.NewLoader[User](owner, backend, 5*time.Second, cache.WithTTL(time.Minute))
-if err != nil {
-	return err
-}
-defer loader.Close()
-```
-
-Use a service or explicitly scoped owner that outlives individual requests.
-Waiters pass their request contexts to Get and may cancel independently; load
-callbacks inherit the owner's values and cancellation, never the initiating
-request's context values.
-Put tenant and permission scope in keys and pass shared credentials explicitly.
-Close cancels and joins callbacks without closing the backend. The timeout,
-owner cancellation and Close require callbacks and backends to honor context
-cancellation. Distinct active keys still require application admission control.
-
-Same-key callbacks must be interchangeable. Shared results containing pointers,
-slices or maps must not be mutated. Calling Close or reentering the same key
-from a load callback deadlocks and is prohibited. See
-[Loader.Get](storage/cache/loader.go) for cache-error fallback and write-back
-semantics.
+Core provides the byte-oriented Cache contract. The read-through Loader,
+including singleflight, owner cancellation, timeout, cache-error fallback and
+write-back policy, lives in [contrib/cache/loader](https://github.com/nostosx/servex-contrib/tree/main/cache/loader).
+Construct it with an explicit Codec and close it to cancel and join shared work.
 
 ## servex-contrib
 

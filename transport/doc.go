@@ -1,5 +1,5 @@
-// Package transport defines the protocol-independent server and client
-// contracts: Server ties a protocol server into the app lifecycle together
-// with its listen URL, and Client turns an Invoker into endpoints that pick a
-// node per call, either from a fixed target or from service discovery.
+// Package transport defines protocol-independent contracts. Server ties a
+// protocol server into the app lifecycle together with its listen URL;
+// Invoker performs a protocol-specific call against a selected address.
+// Target resolution and the shared client engine live in servex-contrib.
 package transport

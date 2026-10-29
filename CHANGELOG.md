@@ -14,6 +14,22 @@ changes; each one is listed under "Breaking changes" with its migration.
 
 ### Breaking changes
 
+- Move HTTP, SQL, four memory backends, JSON, random selection and no-op
+  telemetry implementations to servex-contrib. Old core implementation import
+  paths and constructors are removed; see [migration guide](BACKEND-MIGRATION.md).
+- Move shared transport.Client/NewClient to contrib/transport/client.Client/New
+  and cache.Loader/NewLoader to contrib/cache/loader.Loader/New. ClientOption
+  and LoaderOption become Option in their respective packages; their With*
+  options and Loader errors move with them. Client still requires WithSelector;
+  Loader requires WithCodec. HTTP/gRPC share the moved client engine.
+- Define core as contracts plus the minimal framework runtime: App,
+  health.Group, registration and thin Consumer/Worker lifecycle adapters stay.
+  Core transport/cache contain no execution policy or kitx dependency; the
+  unused core module requirement is removed. Architecture checks enforce this boundary.
+- SpanFromContext returns nil when no Span is present; ContextWithSpan(nil)
+  explicitly shadows parent spans without creating a no-op implementation.
+
+
 - Configuration is contract-only: `config.Config` and `config.Reader` are
   interfaces. Constructors, Env, file sources, decoding, validators and
   snapshot publication moved to `servex-contrib/config/viper`.

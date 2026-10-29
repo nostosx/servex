@@ -32,8 +32,3 @@ type Selector interface {
 // ErrNoAvailable is returned by selectors when there is no node to choose
 // from. Its code is errorx.Unavailable and its reason "NO_AVAILABLE_NODE".
 var ErrNoAvailable = errorx.New(errorx.Unavailable, "NO_AVAILABLE_NODE", "selector: no available node")
-
-// weight returns the effective weight of n.
-func (n Node) weight() int {
-	return max(n.Weight, 1)
-}
