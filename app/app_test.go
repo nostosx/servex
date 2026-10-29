@@ -62,7 +62,7 @@ type checkHook struct {
 
 func (h *checkHook) Check(ctx context.Context) error { return h.check(ctx) }
 
-func quiet() Option { return WithLogger(slog.New(slog.DiscardHandler)) }
+func quiet() Option { return WithLogger(testLogger(slog.New(slog.DiscardHandler))) }
 
 func TestStateString(t *testing.T) {
 	tests := []struct {
@@ -821,7 +821,7 @@ func TestConcurrentStateAndCheck(t *testing.T) {
 
 func TestLogging(t *testing.T) {
 	var buf bytes.Buffer
-	logger := slog.New(slog.NewTextHandler(&buf, nil))
+	logger := testLogger(slog.New(slog.NewTextHandler(&buf, nil)))
 	a := New(WithLogger(logger), WithHooks(
 		NewHook("good", nil, nil),
 		NewHook("bad", nil, func(context.Context) error { return errors.New("nope") }),
@@ -843,10 +843,10 @@ func TestLogging(t *testing.T) {
 	}
 }
 
-func TestWithLoggerNilKeepsDefault(t *testing.T) {
+func TestWithLoggerNilDisablesLogging(t *testing.T) {
 	a := New(WithLogger(nil), nil)
-	if a.logger == nil {
-		t.Fatal("logger is nil")
+	if a.logger != nil {
+		t.Fatal("nil logger selected an implicit backend")
 	}
 }
 

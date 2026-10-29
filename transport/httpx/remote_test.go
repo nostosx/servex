@@ -37,7 +37,7 @@ func retryRetryable(attempts int) endpoint.Middleware {
 // Only the hop that received the failure retries it: the bottom service is
 // called 3 times rather than 9.
 func TestRetryIsNotMultipliedAcrossHops(t *testing.T) {
-	quiet := httpx.WithLogger(slog.New(slog.DiscardHandler))
+	quiet := httpx.WithLogger(testLogger(slog.New(slog.DiscardHandler)))
 	var bottomCalls atomic.Int32
 	bottom := httpx.NewServer(quiet)
 	bottom.Handle("POST /work", func(context.Context, any) (any, error) {
@@ -109,7 +109,7 @@ func TestServerWritesPropagatedRetryable(t *testing.T) {
 		{"local retryable", errorx.New(errorx.Unavailable, "", "busy"), true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			s := httpx.NewServer(httpx.WithLogger(slog.New(slog.DiscardHandler)))
+			s := httpx.NewServer(httpx.WithLogger(testLogger(slog.New(slog.DiscardHandler))))
 			s.Handle("GET /fail", func(context.Context, any) (any, error) { return nil, tc.err }, nil)
 			w := do(s, httptest.NewRequest(http.MethodGet, "/fail", nil))
 			body := decodeJSON[struct {

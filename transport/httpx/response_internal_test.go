@@ -87,7 +87,7 @@ func TestResponseWriterOptionalOperations(t *testing.T) {
 		}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			s := NewServer(WithLogger(slog.New(slog.DiscardHandler)))
+			s := NewServer(WithLogger(testLogger(slog.New(slog.DiscardHandler))))
 			s.Handle("GET /", nilReplyEndpoint, nil, WithResponseEncoder(func(w http.ResponseWriter, _ *http.Request, _ any) error {
 				if _, ok := w.(http.Flusher); ok {
 					t.Error("plain writer claims http.Flusher")
@@ -161,7 +161,7 @@ func TestResponseWriterFlushErrorCommitment(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			recorder := httptest.NewRecorder()
 			underlying := &responseFlushErrorWriter{ResponseWriter: recorder, err: tt.err}
-			s := NewServer(WithLogger(slog.New(slog.DiscardHandler)))
+			s := NewServer(WithLogger(testLogger(slog.New(slog.DiscardHandler))))
 			s.Handle("GET /", nilReplyEndpoint, nil, WithResponseEncoder(func(w http.ResponseWriter, _ *http.Request, _ any) error {
 				if err := http.NewResponseController(w).Flush(); err != tt.err {
 					t.Errorf("Flush = %v, want %v", err, tt.err)
@@ -200,7 +200,7 @@ func TestResponseWriterHijackCommitment(t *testing.T) {
 			if tt.flush {
 				writer = &responseHijackUnwrapper{underlying}
 			}
-			s := NewServer(WithLogger(slog.New(slog.DiscardHandler)))
+			s := NewServer(WithLogger(testLogger(slog.New(slog.DiscardHandler))))
 			s.Handle("GET /", nilReplyEndpoint, nil, WithResponseEncoder(func(w http.ResponseWriter, _ *http.Request, _ any) error {
 				if _, _, err := http.NewResponseController(w).Hijack(); err != tt.err {
 					t.Errorf("Hijack = %v, want %v", err, tt.err)
@@ -222,7 +222,7 @@ func (w *responseHijackUnwrapper) Unwrap() http.ResponseWriter { return w.Respon
 func TestResponseWriterWriteErrorCommitment(t *testing.T) {
 	t.Parallel()
 	recorder := httptest.NewRecorder()
-	s := NewServer(WithLogger(slog.New(slog.DiscardHandler)))
+	s := NewServer(WithLogger(testLogger(slog.New(slog.DiscardHandler))))
 	s.Handle("GET /", nilReplyEndpoint, nil, WithResponseEncoder(func(w http.ResponseWriter, _ *http.Request, _ any) error {
 		_, err := w.Write([]byte("output"))
 		return err

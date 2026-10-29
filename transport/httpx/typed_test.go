@@ -48,7 +48,7 @@ func TestTypedMismatchIsInternal(t *testing.T) {
 	swap := func(next endpoint.Endpoint) endpoint.Endpoint {
 		return func(ctx context.Context, _ any) (any, error) { return next(ctx, "not a request") }
 	}
-	s := httpx.NewServer(httpx.WithMiddleware(swap), httpx.WithLogger(slog.New(slog.DiscardHandler)))
+	s := httpx.NewServer(httpx.WithMiddleware(swap), httpx.WithLogger(testLogger(slog.New(slog.DiscardHandler))))
 	httpx.RouteFunc(s, "GET /x", func(context.Context, *userReq) (*userReply, error) {
 		t.Error("fn called with a mismatched request")
 		return nil, nil

@@ -6,6 +6,20 @@ changes; each one is listed under "Breaking changes" with its migration.
 
 ## Unreleased
 
+### Breaking changes
+
+- Configuration is contract-only: `config.Config` and `config.Reader` are
+  interfaces. Constructors, Env, file sources, decoding, validators and
+  snapshot publication moved to `servex-contrib/config/viper`.
+  Replace `config.New/Env/WithValidator/WithReloadErrorHandler` with the
+  corresponding Viper adapter APIs, `*config.Config` with `config.Config`,
+  and `*config.Snapshot` with `config.Reader`.
+- Lifecycle and HTTP logging accept `logger.Logger` instead of
+  `*slog.Logger`. Wrap backends through `servex-contrib/logger/slog.New`
+  or `logger/zap.New`. No injected logger means no logging; the core
+  no longer selects `slog.Default()`.
+
+
 ## v1.3.0
 
 Release date: 2026-10-28.

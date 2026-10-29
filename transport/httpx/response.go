@@ -6,6 +6,8 @@ import (
 	"net"
 	"net/http"
 
+	sxlog "github.com/nostosx/servex/logger"
+
 	"github.com/nostosx/servex/errorx"
 )
 
@@ -36,7 +38,7 @@ func (rt *route) encodeResponse(w http.ResponseWriter, r *http.Request, reply an
 	tracked := &responseWriter{ResponseWriter: w}
 	if err := rt.encoder(tracked.writer(), r, reply); err != nil {
 		if tracked.committed {
-			rt.s.logger.ErrorContext(r.Context(), "httpx: response encoding failed after commitment",
+			rt.s.log(r.Context(), sxlog.LevelError, "httpx: response encoding failed after commitment",
 				"operation", rt.operation, "error", err)
 			return
 		}

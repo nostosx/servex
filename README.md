@@ -33,14 +33,15 @@ The core module allows only the standard library and kitx, tests included.
 CI rejects other external dependencies, including `golang.org/x/...`. Beyond that,
 three rules decide where code belongs:
 
-1. **Core = contracts + one reference implementation per contract.** Trivial
+1. **Core = contracts, with reference implementations where specified.** Configuration
+   and logging are contract-only. Trivial
    implementations live in the contract package (`encoding.JSON`,
-   `config.Env`, `selector.Random`, the no-op meter and tracer); stateful ones
-   live in a subdirectory (`*/memory`, `config/file`, `transport/httpx`).
+   `selector.Random`, the no-op meter and tracer); stateful ones
+   live in a subdirectory (`*/memory`, `transport/httpx`).
    Every further implementation goes to servex-contrib.
-2. **Do not wrap existing standard interfaces.** Logging is `*slog.Logger`,
-   SQL is `database/sql`. servex only adds instrumentation, lifecycle and
-   health checks around them; callers keep the native types.
+2. **Keep configuration and logging backend-independent.** `config` and
+   `logger` define contracts only. Viper, slog and Zap implementations live
+   in servex-contrib and are explicitly injected. SQL keeps `database/sql`.
 3. **Explicit over implicit.** No global service locator, automatic middleware
    ordering, `init()` registration or global mutable state. Constructors receive
    dependencies explicitly. Optional DI contracts live in `di`; container
@@ -55,10 +56,10 @@ imports and approved kitx packages:
 
 | Layer | Packages | May import |
 |---|---|---|
-| Foundation | `app` `di` `cqrs` `endpoint` `errorx` `metadata` `health` `encoding` `observability/*` | standard library only; not each other |
+| Foundation | `app` `logger` `di` `cqrs` `endpoint` `errorx` `metadata` `health` `encoding` `observability/*` | package allowlist; app may import logger |
 | Contracts | `config` `selector` `discovery` `storage/*` `messaging/*` | foundation |
 | Transport | `transport` | foundation, contracts, `kitx/backoff` |
-| Implementations | reference subpackages such as `*/memory`, `config/file`, `transport/httpx` | their contract and the layers above, never another implementation |
+| Implementations | reference subpackages such as `*/memory`, `transport/httpx` | their contract and the layers above, never another implementation |
 
 ## Packages
 
@@ -72,8 +73,8 @@ imports and approved kitx packages:
 | `metadata` | Request metadata carried in the context: header-like `MD` and the call description `Info` (kind, protocol, operation, header). |
 | `health` | `Checker`, `CheckerFunc` and `Group`, which runs named checks concurrently. |
 | `encoding` | `Codec` interface and the JSON codec. |
-| `config` | Layered configuration (`Source`, `Watchable`, `Config`) with typed accessors, `Unmarshal` and change notification; `Env` source. |
-| `config/file` | File source; codec chosen by extension, changes detected by polling. |
+| `config` | Configuration contracts: `Source`, `Watchable`, `Reader`, `Config`. No loader or decoder. |
+| `logger` | Backend-independent `Logger` and `Level`; no concrete or global backend. |
 | `observability/metrics` | Backend-neutral `Meter`, `Counter`, `Gauge`, `Histogram` and a no-op implementation. |
 | `observability/tracing` | Backend-neutral `Tracer`, `Span`, `Propagator` and no-op implementations. |
 | `discovery` | `Registrar`, `Discoverer`, `Watcher`, and `Registration`, a Hook that registers running servers. |
@@ -406,60 +407,26 @@ writing whenever possible: before commitment they become JSON 500
 Use `http.ResponseController` for optional writer features such as flushing.
 Encoding runs after endpoint middleware returns.
 
-## Validated configuration updates
+## Configuration and logging contracts
 
-`config.New(ctx, sources, opts...)` loads and merges sources. To reject
-invalid initial values and updates, add validators:
-
-```go
-cfg, err := config.New(ctx, []config.Source{config.Env("APP_")},
-	config.WithValidator(func(ctx context.Context, candidate *config.Snapshot) error {
-		var settings struct {
-			Port int `json:"port"`
-		}
-		if err := candidate.Unmarshal("http", &settings); err != nil {
-			return err
-		}
-		if settings.Port < 1 || settings.Port > 65535 {
-			return errors.New("http.port must be between 1 and 65535")
-		}
-		return nil
-	}),
-)
-if err != nil {
-	return err
-}
-```
-
-Validators run in registration order against the fully merged candidate,
-including on construction. Only a successful load, validation and final
-context check publish the new tree. Failed reloads retain the last accepted
-values. Validators must decode into local destinations and must not reenter
-`Reload` on the same config. Read a pinned version across several fields with
-`cfg.Snapshot()`; `Value` and `Unmarshal` copy configuration containers.
-Sources provide nested maps, lists and scalar values, rather than arbitrary
-mutable Go object graphs.
-
-`Watch` calls its callback after every accepted reload. Add a reload error
-handler to observe failed reload attempts as well:
+The core defines `config.Source`, `config.Watchable`, `config.Reader`,
+`config.Config` and `logger.Logger` only. Construction, file/env loading,
+Viper decoding, validation, reload orchestration and snapshot publication live
+in [config/viper](https://github.com/nostosx/servex-contrib/tree/main/config/viper).
+Use [logger/slog](https://github.com/nostosx/servex-contrib/tree/main/logger/slog) or
+[logger/zap](https://github.com/nostosx/servex-contrib/tree/main/logger/zap) to inject a backend:
 
 ```go
-err = cfg.Watch(ctx, func(current *config.Config) {
-	apply(current.Snapshot())
-}, config.WithReloadErrorHandler(func(err error) {
-	report(err)
-}))
+log := slogadapter.New(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
+application := app.New(app.WithLogger(log))
+server := httpx.NewServer(httpx.WithLogger(log))
 ```
 
-Callbacks run synchronously outside the reload lock and never overlap within
-one watch. Source notifications can coalesce. A rejected reload skips the
-success callback and waits for the next notification or a manual `Reload`;
-manual reloads report errors through their return value. Cancellation does
-not generate a failure notification. Terminal source watch errors return
-from `Watch`, while source-internal failures that do not attempt a reload are
-outside the reload callback's scope. A load-only source such as `Env` needs a
-manual reload or a notification from another source. Applying accepted values
-to running components remains the application's responsibility.
+Here `slogadapter` imports `github.com/nostosx/servex-contrib/logger/slog`.
+Omitting an optional logger disables logging; the core never selects a global
+backend. Existing `*slog.Logger` values must be wrapped explicitly.
+These changes are unreleased; use the matching core/contrib source revisions
+during development and publish the core before the adapters.
 
 ## Cache Loader lifecycle
 

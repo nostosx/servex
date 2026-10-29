@@ -5,6 +5,9 @@ import (
 	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"errors"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"io"
 	"os"
 	"os/exec"
@@ -20,6 +23,33 @@ const modulePath = "github.com/nostosx/servex"
 // anyCorePackage is the table entry that allows importing every package of
 // the core module.
 const anyCorePackage = "*"
+
+// TestContractOnlyPackages keeps loading, decoding and logger backends out of
+// packages whose ownership is explicitly limited to contract declarations.
+func TestContractOnlyPackages(t *testing.T) {
+	for _, name := range []string{"config", "logger"} {
+		dir := filepath.Join("..", "..", name)
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, entry := range entries {
+			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
+				continue
+			}
+			path := filepath.Join(dir, entry.Name())
+			file, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, declaration := range file.Decls {
+				if function, ok := declaration.(*ast.FuncDecl); ok {
+					t.Errorf("%s contains implementation %s; move it to servex-contrib", path, function.Name)
+				}
+			}
+		}
+	}
+}
 
 // allowed maps every package of the core module, relative to modulePath, to
 // the core packages its non-test files may import. It mirrors the table in
@@ -37,12 +67,12 @@ var allowed = map[string][]string{
 	"encoding":              nil,
 	"observability/metrics": nil,
 	"observability/tracing": nil,
-	"app":                   nil,
+	"app":                   {"logger"},
+	"logger":                nil,
 	"di":                    nil,
 	"internal/host":         nil,
 	"internal/runhook":      nil,
-	"config":                {"encoding"},
-	"config/file":           {"config", "encoding"},
+	"config":                nil,
 	"selector":              {"errorx"},
 	"discovery":             {"app", "internal/host"},
 	"discovery/memory":      {"discovery"},
@@ -60,7 +90,7 @@ var allowed = map[string][]string{
 	"transport": {"app", "endpoint", "metadata", "errorx", "selector", "discovery"},
 	"transport/httpx": {
 		"transport", "app", "endpoint", "metadata", "errorx",
-		"encoding", "health", "selector", "discovery",
+		"encoding", "health", "selector", "discovery", "logger",
 	},
 	"internal/archtest": {anyCorePackage},
 }
@@ -178,6 +208,10 @@ func TestImportTable(t *testing.T) {
 			continue
 		}
 		for _, imp := range p.Imports {
+			if imp == "log/slog" {
+				t.Errorf("%s imports a concrete logger backend; depend on logger.Logger", rel)
+			}
+
 			if strings.HasPrefix(imp, "github.com/nostosx/kitx/") && !slices.Contains(allowedKitx[rel], imp) {
 				t.Errorf("%s imports unapproved kitx package %s", rel, imp)
 			}

@@ -27,10 +27,11 @@ kitx v1.0.0 从 Go 模块代理解析，无需并排检出仓库或添加本地�
 核心模块及测试只允许使用标准库和 kitx；CI 拒绝其他外部依赖，包括 `golang.org/x/...`。
 代码归属遵循以下约束：
 
-1. **核心提供契约和一个参考实现。** 简单实现位于契约包中，例如 `encoding.JSON`、
-   `config.Env`、`selector.Random` 和空观测实现；有状态的实现位于子目录，
-   如 `*/memory`、`config/file` 和 `transport/httpx`。其他实现放入 servex-contrib。
-2. **保留标准接口。** 日志使用 `*slog.Logger`，SQL 使用 `database/sql`。
+1. **核心提供契约，按能力保留参考实现。** 配置和日志仅定义契约。 简单实现位于契约包中，例如 `encoding.JSON`、
+   `selector.Random` 和空观测实现；有状态的实现位于子目录，
+   如 `*/memory` 和 `transport/httpx`。其他实现放入 servex-contrib。
+2. **配置和日志只定义契约。** `config` 与 `logger` 不包含具体实现；
+   Viper、slog、Zap 实现位于 servex-contrib，由应用显式注入。SQL 使用 `database/sql`。
    servex 补充观测、生命周期和健康检查，调用方继续使用原生类型。
 3. **显式装配。** 不提供全局注册表、自动中间件排序、`init()` 注册或全局可变状态。
    构造函数显式接收依赖；可选的 `di` 契约由 contrib 实现，容器仅用于应用装配入口。
@@ -44,10 +45,10 @@ kitx v1.0.0 从 Go 模块代理解析，无需并排检出仓库或添加本地�
 
 | 层级 | 包 | 允许依赖 |
 |---|---|---|
-| 基础 | `app`、`di`、`cqrs`、`endpoint`、`errorx`、`metadata`、`health`、`encoding`、`observability/*` | 仅标准库，彼此不依赖 |
+| 基础 | `app`、`logger`、`di`、`cqrs`、`endpoint`、`errorx`、`metadata`、`health`、`encoding`、`observability/*` | 按包级白名单；app 可依赖 logger |
 | 契约 | `config`、`selector`、`discovery`、`storage/*`、`messaging/*` | 按包级白名单使用基础能力 |
 | 传输 | `transport` | 基础、契约与 `kitx/backoff` |
-| 实现 | `*/memory`、`config/file`、`transport/httpx` 等 | 自身契约及允许的上层包，不依赖其他实现 |
+| 实现 | `*/memory`、`transport/httpx` 等 | 自身契约及允许的上层包，不依赖其他实现 |
 
 ## 包概览
 
@@ -61,7 +62,8 @@ kitx v1.0.0 从 Go 模块代理解析，无需并排检出仓库或添加本地�
 | `metadata` | 上下文中的请求元数据与调用描述 |
 | `health` | 健康检查契约和并发检查组 |
 | `encoding` | Codec 契约和 JSON 实现 |
-| `config`、`config/file` | 分层配置、环境变量源、轮询文件源、类型读取、快照与重载通知 |
+| `config` | `Source`、`Watchable`、`Reader`、`Config` 契约；加载、解码、快照发布由 contrib 实现 |
+| `logger` | 后端无关的 `Logger`、`Level` 契约，无默认或全局后端 |
 | `observability/metrics`、`observability/tracing` | 后端无关的指标、追踪契约和空实现 |
 | `discovery`、`discovery/memory` | 注册、查询、订阅、注册 Hook 和进程内注册中心 |
 | `selector` | 节点选择契约和加权随机实现 |
@@ -352,50 +354,24 @@ nil 返回 204。尽可能在写入响应前返回编码错误：响应提交前
 `ENCODE_REPLY`，提交后仅记录日志，不追加第二份响应。刷新等可选能力使用
 `http.ResponseController`。响应编码发生在端点中间件返回之后。
 
-## 配置校验与更新
+## 配置与日志契约
 
-`config.New(ctx, sources, opts...)` 加载并合并各配置源；需要拒绝无效初始值和重载时，添加校验器：
-
-```go
-cfg, err := config.New(ctx, []config.Source{config.Env("APP_")},
-	config.WithValidator(func(ctx context.Context, candidate *config.Snapshot) error {
-		var settings struct {
-			Port int `json:"port"`
-		}
-		if err := candidate.Unmarshal("http", &settings); err != nil {
-			return err
-		}
-		if settings.Port < 1 || settings.Port > 65535 {
-			return errors.New("http.port must be between 1 and 65535")
-		}
-		return nil
-	}),
-)
-if err != nil {
-	return err
-}
-```
-
-校验器按注册顺序处理完整合并后的候选配置，包括首次构造。只有加载、校验和最终上下文
-检查均成功才发布；失败重载保留上一份有效值。校验器应解码到局部变量，不得重新进入同一
-配置的 `Reload`。跨字段一致性读取使用 `cfg.Snapshot()`；`Value` 和 `Unmarshal`
-复制配置容器。源应提供嵌套映射、列表和标量，不接受任意可变 Go 对象图。
-
-`Watch` 在每次重载被接受后调用回调；添加重载错误处理器可同时观察失败的重载：
+核心 `config` 只定义 `Source`、`Watchable`、`Reader`、`Config`，
+`logger` 只定义 `Logger` 和日志级别。配置加载、环境变量、Viper 解码、
+校验、监听和快照发布位于 [config/viper](https://github.com/nostosx/servex-contrib/tree/main/config/viper)；
+日志后端位于 [logger/slog](https://github.com/nostosx/servex-contrib/tree/main/logger/slog)
+和 [logger/zap](https://github.com/nostosx/servex-contrib/tree/main/logger/zap)，由应用显式注入：
 
 ```go
-err = cfg.Watch(ctx, func(current *config.Config) {
-	apply(current.Snapshot())
-}, config.WithReloadErrorHandler(func(err error) {
-	report(err)
-}))
+log := slogadapter.New(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
+application := app.New(app.WithLogger(log))
+server := httpx.NewServer(httpx.WithLogger(log))
 ```
 
-回调在重载锁外同步执行，同一次 Watch 的回调不重叠，源通知可以合并。
-被拒绝的重载跳过成功回调，等待下次通知或手动 `Reload`；手动重载通过返回值报告错误。
-取消不产生失败通知。终止性的源订阅错误由 `Watch` 返回；没有触发重载的源内部失败不在
-此回调范围。`Env` 等只读源需要手动重载，或由其他源触发通知。
-将有效配置应用到运行中组件仍由应用负责。
+其中 `slogadapter` 导入 `github.com/nostosx/servex-contrib/logger/slog`。
+省略可选 Logger 时不记录日志；核心不选择全局或默认后端。
+原来的 `*slog.Logger` 需要显式包装。这些变更尚未发布，
+开发验证需使用匹配的核心与 contrib 源码；发布时先核心、后适配器。
 
 ## 缓存 Loader 生命周期
 

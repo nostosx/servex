@@ -740,7 +740,7 @@ func TestHookWithApp(t *testing.T) {
 			c := newFullConnector()
 			c.st.pingErr = tt.pingErr
 			db, _, _ := instrumented(t, c)
-			a := app.New(app.WithHooks(Hook("db", db)), app.WithLogger(slog.New(slog.DiscardHandler)))
+			a := app.New(app.WithHooks(Hook("db", db)), app.WithLogger(testLogger(slog.New(slog.DiscardHandler))))
 			err := a.Start(t.Context())
 			if (err == nil) != tt.wantStart {
 				t.Fatalf("Start err = %v", err)

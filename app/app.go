@@ -4,10 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"slices"
 	"sync"
 	"time"
+
+	sxlog "github.com/nostosx/servex/logger"
 )
 
 // defaultStopTimeout bounds Stop when WithStopTimeout is not given.
@@ -18,7 +19,7 @@ type Option func(*options)
 
 type options struct {
 	hooks       []Hook
-	logger      *slog.Logger
+	logger      sxlog.Logger
 	stopDelay   time.Duration
 	stopTimeout time.Duration
 }
@@ -36,8 +37,8 @@ func WithHooks(hs ...Hook) Option {
 }
 
 // WithLogger sets the logger used for lifecycle events. The default is
-// slog.Default(); a nil logger keeps the default.
-func WithLogger(l *slog.Logger) Option {
+// disabled; a nil logger leaves it disabled.
+func WithLogger(l sxlog.Logger) Option {
 	return func(o *options) {
 		if l != nil {
 			o.logger = l
@@ -64,7 +65,7 @@ func WithStopTimeout(d time.Duration) Option {
 // App satisfies health.Checker structurally through Check.
 type App struct {
 	hooks       []Hook
-	logger      *slog.Logger
+	logger      sxlog.Logger
 	stopDelay   time.Duration
 	stopTimeout time.Duration
 
@@ -85,7 +86,7 @@ type App struct {
 
 // New creates an App in StateInit.
 func New(opts ...Option) *App {
-	o := options{logger: slog.Default(), stopTimeout: defaultStopTimeout}
+	o := options{logger: nil, stopTimeout: defaultStopTimeout}
 	for _, opt := range opts {
 		if opt != nil {
 			opt(&o)
@@ -134,7 +135,7 @@ func (a *App) start(ctx context.Context, managed bool) error {
 	a.mu.Unlock()
 	defer close(a.started)
 
-	a.logger.Info("app starting", "hooks", len(a.hooks))
+	a.log(context.Background(), sxlog.LevelInfo, "app starting", "hooks", len(a.hooks))
 	for i, h := range a.hooks {
 		err := a.startHook(ctx, h)
 		if err == nil {
@@ -144,7 +145,7 @@ func (a *App) start(ctx context.Context, managed bool) error {
 		errs := append([]error{err}, a.stopHooks(stopCtx, a.hooks[:i])...)
 		cancel()
 		a.setState(StateFailed)
-		a.logger.Error("app start failed", "state", StateFailed)
+		a.log(context.Background(), sxlog.LevelError, "app start failed", "state", StateFailed)
 		return errors.Join(errs...)
 	}
 
@@ -158,7 +159,7 @@ func (a *App) start(ctx context.Context, managed bool) error {
 	}
 	a.state = StateRunning
 	a.mu.Unlock()
-	a.logger.Info("app running")
+	a.log(context.Background(), sxlog.LevelInfo, "app running")
 	return nil
 }
 
@@ -171,10 +172,10 @@ func (a *App) startHook(ctx context.Context, h Hook) error {
 	}
 	elapsed := time.Since(begin)
 	if err != nil {
-		a.logger.Error("hook start failed", "hook", name, "duration", elapsed, "error", err)
+		a.log(context.Background(), sxlog.LevelError, "hook start failed", "hook", name, "duration", elapsed, "error", err)
 		return fmt.Errorf("app: start hook %q: %w", name, err)
 	}
-	a.logger.Info("hook started", "hook", name, "duration", elapsed)
+	a.log(context.Background(), sxlog.LevelInfo, "hook started", "hook", name, "duration", elapsed)
 	return nil
 }
 
@@ -198,7 +199,7 @@ func (a *App) watch(h Hook, errs <-chan error) {
 
 // fail records a runtime failure and triggers the overall stop.
 func (a *App) fail(name string, err error) {
-	a.logger.Error("hook failed", "hook", name, "error", err)
+	a.log(context.Background(), sxlog.LevelError, "hook failed", "hook", name, "error", err)
 	a.mu.Lock()
 	a.failures = append(a.failures, fmt.Errorf("app: hook %q: %w", name, err))
 	managed := a.managed
@@ -244,7 +245,7 @@ func (a *App) Stop(ctx context.Context) error {
 		case StateInit:
 			a.state = StateStopped
 			a.mu.Unlock()
-			a.logger.Info("app stopped", "state", StateStopped)
+			a.log(context.Background(), sxlog.LevelInfo, "app stopped", "state", StateStopped)
 			return nil
 		case StateStarting:
 			a.mu.Unlock()
@@ -267,9 +268,9 @@ func (a *App) Stop(ctx context.Context) error {
 			close(a.stopped)
 			a.mu.Unlock()
 			if final == StateFailed {
-				a.logger.Error("app stopped", "state", final)
+				a.log(context.Background(), sxlog.LevelError, "app stopped", "state", final)
 			} else {
-				a.logger.Info("app stopped", "state", final)
+				a.log(context.Background(), sxlog.LevelInfo, "app stopped", "state", final)
 			}
 			return err
 		case StateStopping:
@@ -291,7 +292,7 @@ func (a *App) stop(ctx context.Context) error {
 	close(a.quit)
 	a.watchers.Wait()
 
-	a.logger.Info("app stopping", "stop_delay", a.stopDelay)
+	a.log(context.Background(), sxlog.LevelInfo, "app stopping", "stop_delay", a.stopDelay)
 	ctx, cancel := a.stopContext(ctx)
 	defer cancel()
 	errs := a.drainHooks(ctx)
@@ -318,7 +319,7 @@ func (a *App) drainHooks(ctx context.Context) []error {
 		}
 		name := h.Name()
 		if err := ctx.Err(); err != nil {
-			a.logger.Error("hook drain skipped", "hook", name, "error", err)
+			a.log(context.Background(), sxlog.LevelError, "hook drain skipped", "hook", name, "error", err)
 			return append(errs, fmt.Errorf("app: drain hook %q: %w", name, err))
 		}
 		begin := time.Now()
@@ -336,11 +337,11 @@ func (a *App) drainHooks(ctx context.Context) []error {
 		}
 		elapsed := time.Since(begin)
 		if err != nil {
-			a.logger.Error("hook drain failed", "hook", name, "duration", elapsed, "error", err)
+			a.log(context.Background(), sxlog.LevelError, "hook drain failed", "hook", name, "duration", elapsed, "error", err)
 			errs = append(errs, fmt.Errorf("app: drain hook %q: %w", name, err))
 			continue
 		}
-		a.logger.Info("hook drained", "hook", name, "duration", elapsed)
+		a.log(context.Background(), sxlog.LevelInfo, "hook drained", "hook", name, "duration", elapsed)
 	}
 	return errs
 }
@@ -377,11 +378,11 @@ func (a *App) stopHooks(ctx context.Context, hooks []Hook) []error {
 		}
 		elapsed := time.Since(begin)
 		if err != nil {
-			a.logger.Error("hook stop failed", "hook", name, "duration", elapsed, "error", err)
+			a.log(context.Background(), sxlog.LevelError, "hook stop failed", "hook", name, "duration", elapsed, "error", err)
 			errs = append(errs, fmt.Errorf("app: stop hook %q: %w", name, err))
 			continue
 		}
-		a.logger.Info("hook stopped", "hook", name, "duration", elapsed)
+		a.log(context.Background(), sxlog.LevelInfo, "hook stopped", "hook", name, "duration", elapsed)
 	}
 	return errs
 }
@@ -392,7 +393,7 @@ func (a *App) timeoutError(unfinished []Hook) error {
 	for _, h := range slices.Backward(unfinished) {
 		names = append(names, h.Name())
 	}
-	a.logger.Error("app stop timeout", "unfinished", names)
+	a.log(context.Background(), sxlog.LevelError, "app stop timeout", "unfinished", names)
 	return fmt.Errorf("app: stop timeout, unfinished hooks: %v", names)
 }
 
@@ -458,4 +459,10 @@ func (a *App) setState(s State) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.state = s
+}
+
+func (a *App) log(ctx context.Context, level sxlog.Level, message string, fields ...any) {
+	if a.logger != nil {
+		a.logger.Log(ctx, level, message, fields...)
+	}
 }

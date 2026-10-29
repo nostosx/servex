@@ -5,15 +5,18 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
+	"log"
 	"mime"
 	"net"
 	"net/http"
 	"net/url"
 	"reflect"
 	"slices"
+	"strings"
 	"sync"
 	"time"
+
+	sxlog "github.com/nostosx/servex/logger"
 
 	"github.com/nostosx/servex/encoding"
 	"github.com/nostosx/servex/endpoint"
@@ -55,7 +58,7 @@ type serverOptions struct {
 	httpMiddleware    []func(http.Handler) http.Handler
 	codecs            []encoding.Codec
 	health            health.Checker
-	logger            *slog.Logger
+	logger            sxlog.Logger
 	readTimeout       time.Duration
 	readHeaderTimeout time.Duration
 	writeTimeout      time.Duration
@@ -149,9 +152,8 @@ func WithHealth(c health.Checker) ServerOption {
 }
 
 // WithLogger sets the logger for serve errors, failed readiness checks and
-// requests that fail with a 5xx status. The default is slog.Default(); a nil
-// logger keeps the default.
-func WithLogger(l *slog.Logger) ServerOption {
+// requests that fail with a 5xx status. Logging is disabled unless a logger is injected.
+func WithLogger(l sxlog.Logger) ServerOption {
 	return func(o *serverOptions) {
 		if l != nil {
 			o.logger = l
@@ -182,7 +184,7 @@ type Server struct {
 	addr              string
 	middleware        endpoint.Middleware
 	codecs            codecs
-	logger            *slog.Logger
+	logger            sxlog.Logger
 	mux               *http.ServeMux
 	handler           http.Handler
 	errc              chan error
@@ -204,7 +206,7 @@ type Server struct {
 // NewServer creates a Server. Routes may be registered before or after
 // Start.
 func NewServer(opts ...ServerOption) *Server {
-	o := serverOptions{name: "http", addr: ":8000", logger: slog.Default(), maxBodyBytes: DefaultMaxBodyBytes}
+	o := serverOptions{name: "http", addr: ":8000", logger: nil, maxBodyBytes: DefaultMaxBodyBytes}
 	for _, opt := range opts {
 		if opt != nil {
 			opt(&o)
@@ -255,7 +257,7 @@ func (s *Server) Start(ctx context.Context) error {
 	}
 	srv := &http.Server{
 		Handler:           s,
-		ErrorLog:          slog.NewLogLogger(s.logger.Handler(), slog.LevelError),
+		ErrorLog:          log.New(errorLogWriter{s.logger}, "", 0),
 		ReadTimeout:       s.readTimeout,
 		ReadHeaderTimeout: s.readHeaderTimeout,
 		WriteTimeout:      s.writeTimeout,
@@ -273,7 +275,7 @@ func (s *Server) Start(ctx context.Context) error {
 func (s *Server) serve(srv *http.Server, ln net.Listener) {
 	defer close(s.errc)
 	if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		s.logger.Error("httpx: serve failed", "addr", ln.Addr().String(), "error", err)
+		s.log(context.Background(), sxlog.LevelError, "httpx: serve failed", "addr", ln.Addr().String(), "error", err)
 		s.errc <- fmt.Errorf("httpx: serve: %w", err)
 	}
 }
@@ -562,7 +564,7 @@ func (s *Server) writeError(w http.ResponseWriter, r *http.Request, operation st
 		status = http.StatusRequestEntityTooLarge
 	}
 	if status >= http.StatusInternalServerError {
-		s.logger.ErrorContext(r.Context(), "httpx: request failed",
+		s.log(r.Context(), sxlog.LevelError, "httpx: request failed",
 			"operation", operation, "status", status, "error", err)
 	}
 	data, merr := encoding.JSON.Marshal(errorBody{
@@ -590,7 +592,7 @@ func (s *Server) mountHealth(c health.Checker) {
 	})
 	s.mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
 		if err := c.Check(r.Context()); err != nil {
-			s.logger.WarnContext(r.Context(), "httpx: not ready", "error", err)
+			s.log(r.Context(), sxlog.LevelWarn, "httpx: not ready", "error", err)
 			writeText(w, http.StatusServiceUnavailable, "not ready\n")
 			return
 		}
@@ -623,4 +625,19 @@ func isNil(v any) bool {
 	}
 	rv := reflect.ValueOf(v)
 	return rv.Kind() == reflect.Pointer && rv.IsNil()
+}
+
+func (s *Server) log(ctx context.Context, level sxlog.Level, message string, fields ...any) {
+	if s.logger != nil {
+		s.logger.Log(ctx, level, message, fields...)
+	}
+}
+
+type errorLogWriter struct{ logger sxlog.Logger }
+
+func (w errorLogWriter) Write(p []byte) (int, error) {
+	if w.logger != nil {
+		w.logger.Log(context.Background(), sxlog.LevelError, strings.TrimSpace(string(p)))
+	}
+	return len(p), nil
 }

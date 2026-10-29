@@ -65,7 +65,7 @@ func TestRegistrationDeregistersOnDrain(t *testing.T) {
 		var deregisteredAt time.Duration = -1
 		r.onDeregister = func() { deregisteredAt = time.Since(begin) }
 		reg := Registration(r, Instance{ID: "a", Name: "svc"}, srv)
-		a := app.New(app.WithStopDelay(time.Second), app.WithLogger(slog.New(slog.DiscardHandler)),
+		a := app.New(app.WithStopDelay(time.Second), app.WithLogger(testLogger(slog.New(slog.DiscardHandler))),
 			app.WithHooks(app.NewHook("server", nil, nil), reg))
 		if err := a.Start(t.Context()); err != nil {
 			t.Fatal(err)

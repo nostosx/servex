@@ -76,7 +76,9 @@ does not need a release-note entry. Report sensitive issues through
 
 The core owns protocol-independent contracts and one reference implementation
 per contract. Additional implementations and SDKs belong in servex-contrib;
-runnable applications belong in servex-examples. Logging keeps `log/slog` and
+runnable applications belong in servex-examples. Configuration and logging
+are contract-only: use `config.Config` and `logger.Logger`; production core
+packages must not import `log/slog`. Backend implementations belong in contrib.
 SQL access keeps `database/sql`. Constructors receive dependencies explicitly.
 The optional `di` package defines registration and resolution contracts only;
 container implementations live in servex-contrib. Keep containers at application
@@ -99,12 +101,12 @@ transitive imports.
 | `encoding` | none |
 | `observability/metrics` | none |
 | `observability/tracing` | none |
-| `app` | none |
+| `app` | `logger` |
+| `logger` | none |
 | `di` | none |
 | `internal/host` | none |
 | `internal/runhook` | none |
-| `config` | `encoding` |
-| `config/file` | `config`, `encoding` |
+| `config` | none |
 | `selector` | `errorx` |
 | `discovery` | `app`, `internal/host` |
 | `discovery/memory` | `discovery` |
@@ -116,7 +118,7 @@ transitive imports.
 | `messaging/jobqueue` | `app`, `endpoint`, `metadata`, `errorx`, `internal/runhook` |
 | `messaging/jobqueue/memory` | `messaging/jobqueue`, `endpoint`, `errorx`, `metadata` |
 | `transport` | `app`, `endpoint`, `metadata`, `errorx`, `selector`, `discovery` |
-| `transport/httpx` | `transport`, `app`, `endpoint`, `metadata`, `errorx`, `encoding`, `health`, `selector`, `discovery` |
+| `transport/httpx` | `transport`, `app`, `endpoint`, `metadata`, `errorx`, `encoding`, `health`, `selector`, `discovery`, `logger` |
 | `internal/archtest` | any core package |
 
 Approved external imports are `kitx/backoff` for `transport` and
@@ -131,7 +133,9 @@ standard-library-only.
 packages, forbidden imports and stale table entries. Update its `allowed` and
 `allowedKitx` tables with this section when boundaries change. The internal dependency
 step checks module and package graphs; `task check` includes it and architecture tests.
-Contrib modules import public core packages and never each other. Their
+Contrib production packages import public core packages and never each other.
+Backend interoperability tests may import another contrib module; keep that
+dependency confined to tests. Their
 `middleware` and `selector` modules share the standard-library, servex and kitx
 boundary; other modules own their SDK dependencies.
 

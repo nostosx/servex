@@ -44,7 +44,7 @@ func TestEndToEndThroughDiscovery(t *testing.T) {
 	srv := httpx.NewServer(
 		httpx.WithAddress("127.0.0.1:0"),
 		httpx.WithHealth(health.CheckerFunc(func(ctx context.Context) error { return a.Check(ctx) })),
-		httpx.WithLogger(slog.New(slog.DiscardHandler)),
+		httpx.WithLogger(testLogger(slog.New(slog.DiscardHandler))),
 	)
 	httpx.Route[e2eGetUser](srv, "GET /v1/users/{id}", func(ctx context.Context, req any) (any, error) {
 		r := req.(*e2eGetUser)
@@ -60,7 +60,7 @@ func TestEndToEndThroughDiscovery(t *testing.T) {
 
 	a = app.New(
 		app.WithHooks(srv, discovery.Registration(reg, discovery.Instance{Name: "user", Version: "v1"}, srv)),
-		app.WithLogger(slog.New(slog.DiscardHandler)),
+		app.WithLogger(testLogger(slog.New(slog.DiscardHandler))),
 	)
 	if err := a.Start(ctx); err != nil {
 		t.Fatalf("app start: %v", err)

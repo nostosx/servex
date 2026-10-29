@@ -81,7 +81,7 @@ func TestConsumerReadyFailureFailsStart(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		sub := readySubscriber{ready: func(context.Context, func()) error { return errBoom }}
 		h := broker.NewConsumer(sub, "orders", "", nopHandler)
-		a := app.New(app.WithLogger(slog.New(slog.DiscardHandler)), app.WithHooks(h))
+		a := app.New(app.WithLogger(testLogger(slog.New(slog.DiscardHandler))), app.WithHooks(h))
 		err := a.Start(t.Context())
 		if !errors.Is(err, errBoom) {
 			t.Fatalf("Start() = %v, want %v", err, errBoom)

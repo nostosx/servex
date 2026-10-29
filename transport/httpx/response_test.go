@@ -188,7 +188,7 @@ func TestResponseEncoderBypassedOnErrors(t *testing.T) {
 func TestResponseEncoderErrorBeforeCommit(t *testing.T) {
 	t.Parallel()
 	var logs bytes.Buffer
-	s := httpx.NewServer(httpx.WithLogger(slog.New(slog.NewTextHandler(&logs, nil))))
+	s := httpx.NewServer(httpx.WithLogger(testLogger(slog.New(slog.NewTextHandler(&logs, nil)))))
 	s.Handle("GET /", echo, nil, httpx.WithResponseEncoder(func(w http.ResponseWriter, _ *http.Request, _ any) error {
 		w.Header().Set("X-Existing", "changed")
 		w.Header().Del("X-Preserved")
@@ -236,7 +236,7 @@ func TestResponseEncoderErrorAfterCommit(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			var logs bytes.Buffer
-			s := httpx.NewServer(httpx.WithLogger(slog.New(slog.NewTextHandler(&logs, nil))))
+			s := httpx.NewServer(httpx.WithLogger(testLogger(slog.New(slog.NewTextHandler(&logs, nil)))))
 			s.Handle("GET /", echo, nil, httpx.WithResponseEncoder(func(w http.ResponseWriter, _ *http.Request, _ any) error {
 				w.Header().Set("Content-Type", "text/plain")
 				if err := tt.commit(w); err != nil {
@@ -257,7 +257,7 @@ func TestResponseEncoderErrorAfterCommit(t *testing.T) {
 
 func TestResponseEncoderInformationalHeaders(t *testing.T) {
 	t.Parallel()
-	s := httpx.NewServer(httpx.WithLogger(slog.New(slog.DiscardHandler)))
+	s := httpx.NewServer(httpx.WithLogger(testLogger(slog.New(slog.DiscardHandler))))
 	s.Handle("GET /", echo, nil, httpx.WithResponseEncoder(func(w http.ResponseWriter, _ *http.Request, _ any) error {
 		w.Header().Set("Link", "</style.css>; rel=preload")
 		w.WriteHeader(http.StatusEarlyHints)
@@ -342,7 +342,7 @@ func TestResponseEncoderNativeHTTPBehavior(t *testing.T) {
 func TestResponseEncoderNativeHijack(t *testing.T) {
 	t.Parallel()
 	var logs bytes.Buffer
-	s := httpx.NewServer(httpx.WithLogger(slog.New(slog.NewTextHandler(&logs, nil))))
+	s := httpx.NewServer(httpx.WithLogger(testLogger(slog.New(slog.NewTextHandler(&logs, nil)))))
 	finished := make(chan struct{})
 	s.Handle("GET /", echo, nil, httpx.WithResponseEncoder(func(w http.ResponseWriter, _ *http.Request, _ any) error {
 		conn, buffered, err := http.NewResponseController(w).Hijack()

@@ -386,7 +386,7 @@ func TestConsumerFailureStopsApp(t *testing.T) {
 			}
 		})
 		a := app.New(
-			app.WithLogger(slog.New(slog.DiscardHandler)),
+			app.WithLogger(testLogger(slog.New(slog.DiscardHandler))),
 			app.WithHooks(broker.NewConsumer(sub, "orders", "g", nopHandler)),
 		)
 		err := a.Run(t.Context())
@@ -408,7 +408,7 @@ func TestConsumerStopsWithApp(t *testing.T) {
 			return nil
 		})
 		a := app.New(
-			app.WithLogger(slog.New(slog.DiscardHandler)),
+			app.WithLogger(testLogger(slog.New(slog.DiscardHandler))),
 			app.WithHooks(broker.NewConsumer(sub, "orders", "g", nopHandler)),
 		)
 		ctx, cancel := context.WithTimeout(t.Context(), time.Minute)

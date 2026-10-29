@@ -253,7 +253,7 @@ func TestWorkerFailureStopsApp(t *testing.T) {
 			}
 		})
 		a := app.New(
-			app.WithLogger(slog.New(slog.DiscardHandler)),
+			app.WithLogger(testLogger(slog.New(slog.DiscardHandler))),
 			app.WithHooks(jobqueue.NewWorker(r, nil)),
 		)
 		if err := a.Run(t.Context()); !errors.Is(err, errBoom) {

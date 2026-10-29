@@ -24,7 +24,7 @@ func TestHookWithoutReadiness(t *testing.T) {
 	}
 	c.st.set(func(s *fakeState) { s.pingErr = nil })
 
-	a := app.New(app.WithHooks(h), app.WithLogger(slog.New(slog.DiscardHandler)))
+	a := app.New(app.WithHooks(h), app.WithLogger(testLogger(slog.New(slog.DiscardHandler))))
 	if err := a.Start(t.Context()); err != nil {
 		t.Fatal(err)
 	}
