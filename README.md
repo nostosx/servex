@@ -8,16 +8,16 @@ the minimal framework runtime, using the Go standard library. Implementations
 that need third-party SDKs, such as gRPC, Redis and OpenTelemetry, live in
 [servex-contrib](https://github.com/nostosx/servex-contrib).
 
-The current release is v1.3.0. Minor releases may contain breaking API
+The current release is v1.4.0. Minor releases may contain breaking API
 changes; each one is listed with its migration in [CHANGELOG.md](CHANGELOG.md).
 Patch releases do not change the API.
 
 Runnable HTTP and gRPC programs live in the separate
 [servex-examples](https://github.com/nostosx/servex-examples) project.
 
-This source includes an unreleased backend migration. See
+v1.4.0 moves concrete backends into contrib. See
 [the migration guide](BACKEND-MIGRATION.md) for moved import paths, explicit
-Codec/Selector wiring and absent-span behavior. Published versions retain
+Codec/Selector wiring and absent-span behavior. Earlier versions retain
 their release-time layout.
 
 ## Getting started
@@ -25,11 +25,10 @@ their release-time layout.
 Requires Go 1.27.3. Add servex to your application module:
 
 ```sh
-go get github.com/nostosx/servex@v1.3.0
+go get github.com/nostosx/servex@v1.4.0
 ```
 
-This core source revision has no external module dependencies. Published
-servex v1.3.0 uses kitx v1.0.0 from the Go module proxy. Core tags have no directory prefix: `v1.3.0`.
+servex v1.4.0 has no external module dependencies. Core tags have no directory prefix: `v1.4.0`.
 
 ## Design principles
 
@@ -68,9 +67,9 @@ imports and approved kitx packages:
 
 | Directory | Purpose |
 |---|---|
-| `transport/sse` | Contract-only SSE event, sender, acceptor, receiver and client APIs; implementation: contrib `transport/ssex` (unreleased). |
-| `transport/websocket` | Contract-only WebSocket messages, connections, handshakes and close status; implementation: contrib `transport/websocketx` (unreleased). |
-| `transport/rpc` | Typed unary request/response and stream contracts; Connect/gRPC/gRPC-Web adapter: contrib `transport/connectx` (unreleased). |
+| `transport/sse` | Contract-only SSE event, sender, acceptor, receiver and client APIs; implementation: contrib `transport/ssex` (v1.0.0). |
+| `transport/websocket` | Contract-only WebSocket messages, connections, handshakes and close status; implementation: contrib `transport/websocketx` (v1.0.0). |
+| `transport/rpc` | Typed unary request/response and stream contracts; Connect/gRPC/gRPC-Web adapter: contrib `transport/connectx` (v1.0.0). |
 | `app` | Lifecycle container. Starts `Hook`s in registration order, stops them in reverse, rolls back a failed start, aggregates readiness (`App.Check`) and stops on runtime failures. `SignalContext` handles SIGINT/SIGTERM. |
 | `di` | Optional `Container`/`Resolver` contracts and typed `Provide`, `Supply`, `Resolve`, `MustResolve` helpers. Implementations live in contrib; available since v1.3.0. |
 | `cqrs` | Typed application `Handler`, `Command`, `Query` and explicit middleware composition; available since v1.1.0. |
@@ -137,7 +136,7 @@ To try the following service in a new directory, initialize an application modul
 mkdir servex-demo
 cd servex-demo
 go mod init example.com/servex-demo
-go get github.com/nostosx/servex@v1.3.0
+go get github.com/nostosx/servex@v1.4.0
 mkdir server client
 ```
 
@@ -424,8 +423,8 @@ server := httpx.NewServer(httpx.WithLogger(log))
 Here `slogadapter` imports `github.com/nostosx/servex-contrib/logger/slog`.
 Omitting an optional logger disables logging; the core never selects a global
 backend. Existing `*slog.Logger` values must be wrapped explicitly.
-These changes are unreleased; use the matching core/contrib source revisions
-during development and publish the core before the adapters.
+These contracts are available in servex v1.4.0. Use the matching contrib
+configuration and logging adapters from their v1.0.0 releases.
 
 ## Cache loading
 

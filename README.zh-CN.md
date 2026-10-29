@@ -7,24 +7,24 @@ servex 是面向 Go 微服务的工具库，核心提供协议无关的契约、
 如 gRPC、Redis 和 OpenTelemetry，位于
 [servex-contrib](https://github.com/nostosx/servex-contrib)。
 
-当前版本为 v1.3.0。次版本可能包含不兼容的 API 变更，每项变更及迁移方式都列在
+当前版本为 v1.4.0。次版本可能包含不兼容的 API 变更，每项变更及迁移方式都列在
 [CHANGELOG.md](CHANGELOG.md) 中；补丁版本不改变 API。可运行的 HTTP 和 gRPC 程序位于独立的
 [servex-examples](https://github.com/nostosx/servex-examples) 项目。
 
-当前源码包含尚未发布的后端迁移：具体实现与原 import 路径的映射、
+v1.4.0 将具体后端迁入 contrib：具体实现与原 import 路径的映射、
 显式 Codec／Selector 装配及 Span 空值规则见 [迁移说明](BACKEND-MIGRATION.md)。
-已发布版本继续使用其发布时的目录结构。
+更早版本继续使用其发布时的目录结构。
 
 ## 开始使用
 
 需要 Go 1.27.3。在应用模块根目录安装：
 
 ```sh
-go get github.com/nostosx/servex@v1.3.0
+go get github.com/nostosx/servex@v1.4.0
 ```
 
-当前核心源码没有外部模块依赖；已发布的 servex v1.3.0 使用代理中的 kitx v1.0.0。
-核心标签不带目录前缀，例如 `v1.3.0`。
+servex v1.4.0 没有外部模块依赖。
+核心标签不带目录前缀，例如 `v1.4.0`。
 
 ## 设计原则
 
@@ -57,9 +57,9 @@ go get github.com/nostosx/servex@v1.3.0
 
 | 目录 | 职责 |
 |---|---|
-| `transport/sse` | SSE 事件、发送、握手、接收与客户端契约；contrib `transport/ssex` 提供实现，尚未发布 |
-| `transport/websocket` | WebSocket 消息、连接、握手与关闭状态契约；contrib `transport/websocketx` 提供实现，尚未发布 |
-| `transport/rpc` | 类型化 unary 请求/响应及流接口；contrib `transport/connectx` 提供 Connect/gRPC/gRPC-Web 适配，尚未发布 |
+| `transport/sse` | SSE 事件、发送、握手、接收与客户端契约；contrib `transport/ssex` 提供实现，版本为 v1.0.0 |
+| `transport/websocket` | WebSocket 消息、连接、握手与关闭状态契约；contrib `transport/websocketx` 提供实现，版本为 v1.0.0 |
+| `transport/rpc` | 类型化 unary 请求/响应及流接口；contrib `transport/connectx` 提供 Connect/gRPC/gRPC-Web 适配，版本为 v1.0.0 |
 | `app` | Hook 顺序启动、逆序停止、启动失败回滚、就绪检查和运行失败处理；`SignalContext` 处理 SIGINT/SIGTERM |
 | `di` | 可选的 `Container` / `Resolver` 契约和类型化 `Provide`、`Supply`、`Resolve`、`MustResolve`；contrib 提供实现，自 v1.3.0 起提供 |
 | `cqrs` | 类型化应用 `Handler`、`Command`、`Query` 与显式中间件组合；自 v1.1.0 起提供 |
@@ -118,7 +118,7 @@ nil handler 属于编程错误。完整中间件实现和顺序验证见
 mkdir servex-demo
 cd servex-demo
 go mod init example.com/servex-demo
-go get github.com/nostosx/servex@v1.3.0
+go get github.com/nostosx/servex@v1.4.0
 mkdir server client
 ```
 
@@ -375,8 +375,8 @@ server := httpx.NewServer(httpx.WithLogger(log))
 
 其中 `slogadapter` 导入 `github.com/nostosx/servex-contrib/logger/slog`。
 省略可选 Logger 时不记录日志；核心不选择全局或默认后端。
-原来的 `*slog.Logger` 需要显式包装。这些变更尚未发布，
-开发验证需使用匹配的核心与 contrib 源码；发布时先核心、后适配器。
+原来的 `*slog.Logger` 需要显式包装。这些契约自 servex v1.4.0 提供，
+配置与日志使用对应 contrib 适配器的 v1.0.0 版本。
 
 ## 缓存加载
 

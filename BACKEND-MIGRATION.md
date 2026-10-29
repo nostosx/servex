@@ -1,4 +1,4 @@
-# Backend migration (unreleased)
+# Backend migration (servex v1.4.0)
 
 This source change moves concrete backends, algorithms and reference
 implementations out of servex. The second phase also moves the shared client

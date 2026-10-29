@@ -6,6 +6,10 @@ changes; each one is listed under "Breaking changes" with its migration.
 
 ## Unreleased
 
+## v1.4.0
+
+Release date: 2026-10-29.
+
 - Add contract-only `transport/sse`, `transport/websocket` and `transport/rpc`.
   SSE events/stream ownership, WebSocket handshakes/message connections and typed
   unary/streaming RPC boundaries contain no wire implementation or SDK imports.
