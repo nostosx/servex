@@ -6,6 +6,12 @@ changes; each one is listed under "Breaking changes" with its migration.
 
 ## Unreleased
 
+- Add contract-only `transport/sse`, `transport/websocket` and `transport/rpc`.
+  SSE events/stream ownership, WebSocket handshakes/message connections and typed
+  unary/streaming RPC boundaries contain no wire implementation or SDK imports.
+  Implementations live in the independent contrib ssex, websocketx and connectx
+  modules. Architecture tests enforce the contract-only boundary.
+
 ### Breaking changes
 
 - Configuration is contract-only: `config.Config` and `config.Reader` are

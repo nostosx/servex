@@ -54,6 +54,9 @@ kitx v1.0.0 从 Go 模块代理解析，无需并排检出仓库或添加本地�
 
 | 目录 | 职责 |
 |---|---|
+| `transport/sse` | SSE 事件、发送、握手、接收与客户端契约；contrib `transport/ssex` 提供实现，尚未发布 |
+| `transport/websocket` | WebSocket 消息、连接、握手与关闭状态契约；contrib `transport/websocketx` 提供实现，尚未发布 |
+| `transport/rpc` | 类型化 unary 请求/响应及流接口；contrib `transport/connectx` 提供 Connect/gRPC/gRPC-Web 适配，尚未发布 |
 | `app` | Hook 顺序启动、逆序停止、启动失败回滚、就绪检查和运行失败处理；`SignalContext` 处理 SIGINT/SIGTERM |
 | `di` | 可选的 `Container` / `Resolver` 契约和类型化 `Provide`、`Supply`、`Resolve`、`MustResolve`；contrib 提供实现，自 v1.3.0 起提供 |
 | `cqrs` | 类型化应用 `Handler`、`Command`、`Query` 与显式中间件组合；自 v1.1.0 起提供 |

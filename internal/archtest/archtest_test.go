@@ -27,7 +27,7 @@ const anyCorePackage = "*"
 // TestContractOnlyPackages keeps loading, decoding and logger backends out of
 // packages whose ownership is explicitly limited to contract declarations.
 func TestContractOnlyPackages(t *testing.T) {
-	for _, name := range []string{"config", "logger"} {
+	for _, name := range []string{"config", "logger", "transport/sse", "transport/websocket", "transport/rpc"} {
 		dir := filepath.Join("..", "..", name)
 		entries, err := os.ReadDir(dir)
 		if err != nil {
@@ -92,7 +92,10 @@ var allowed = map[string][]string{
 		"transport", "app", "endpoint", "metadata", "errorx",
 		"encoding", "health", "selector", "discovery", "logger",
 	},
-	"internal/archtest": {anyCorePackage},
+	"transport/sse":       nil,
+	"transport/websocket": nil,
+	"transport/rpc":       nil,
+	"internal/archtest":   {anyCorePackage},
 }
 
 // allowedKitx records the external packages used by each core package.

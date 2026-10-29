@@ -119,6 +119,9 @@ transitive imports.
 | `messaging/jobqueue/memory` | `messaging/jobqueue`, `endpoint`, `errorx`, `metadata` |
 | `transport` | `app`, `endpoint`, `metadata`, `errorx`, `selector`, `discovery` |
 | `transport/httpx` | `transport`, `app`, `endpoint`, `metadata`, `errorx`, `encoding`, `health`, `selector`, `discovery`, `logger` |
+| `transport/sse` | none (contracts only) |
+| `transport/websocket` | none (contracts only) |
+| `transport/rpc` | none (contracts only) |
 | `internal/archtest` | any core package |
 
 Approved external imports are `kitx/backoff` for `transport` and

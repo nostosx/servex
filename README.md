@@ -65,6 +65,9 @@ imports and approved kitx packages:
 
 | Directory | Purpose |
 |---|---|
+| `transport/sse` | Contract-only SSE event, sender, acceptor, receiver and client APIs; implementation: contrib `transport/ssex` (unreleased). |
+| `transport/websocket` | Contract-only WebSocket messages, connections, handshakes and close status; implementation: contrib `transport/websocketx` (unreleased). |
+| `transport/rpc` | Typed unary request/response and stream contracts; Connect/gRPC/gRPC-Web adapter: contrib `transport/connectx` (unreleased). |
 | `app` | Lifecycle container. Starts `Hook`s in registration order, stops them in reverse, rolls back a failed start, aggregates readiness (`App.Check`) and stops on runtime failures. `SignalContext` handles SIGINT/SIGTERM. |
 | `di` | Optional `Container`/`Resolver` contracts and typed `Provide`, `Supply`, `Resolve`, `MustResolve` helpers. Implementations live in contrib; available since v1.3.0. |
 | `cqrs` | Typed application `Handler`, `Command`, `Query` and explicit middleware composition; available since v1.1.0. |
