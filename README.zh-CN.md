@@ -1,5 +1,8 @@
 # servex
 
+Servex v1.5.0 提供后端无关的 `storage/vector` 与 `storage/search` 契约。
+PostgreSQL 实现及扩展操作位于 servex-contrib，应用选择 Embedding、凭据、租户与索引策略。
+
 [English](README.md) | 简体中文
 
 servex 是面向 Go 微服务的工具库，核心提供协议无关的契约、公共数据模型和显式运行机制，
@@ -7,7 +10,7 @@ servex 是面向 Go 微服务的工具库，核心提供协议无关的契约、
 如 gRPC、Redis 和 OpenTelemetry，位于
 [servex-contrib](https://github.com/nostosx/servex-contrib)。
 
-当前版本为 v1.4.0。次版本可能包含不兼容的 API 变更，每项变更及迁移方式都列在
+当前版本为 v1.5.0。次版本可能包含不兼容的 API 变更，每项变更及迁移方式都列在
 [CHANGELOG.md](CHANGELOG.md) 中；补丁版本不改变 API。可运行的 HTTP 和 gRPC 程序位于独立的
 [servex-examples](https://github.com/nostosx/servex-examples) 项目。
 
@@ -20,7 +23,7 @@ v1.4.0 将具体后端迁入 contrib：具体实现与原 import 路径的映射
 需要 Go 1.27.3。在应用模块根目录安装：
 
 ```sh
-go get github.com/nostosx/servex@v1.4.0
+go get github.com/nostosx/servex@v1.5.0
 ```
 
 servex v1.4.0 没有外部模块依赖。
@@ -75,6 +78,8 @@ servex v1.4.0 没有外部模块依赖。
 | `selector` | 节点选择契约；具体算法位于 contrib |
 | `transport` | Server、Invoker 与函数适配器契约；共享客户端引擎位于 contrib/transport/client |
 | `storage/cache` | 字节缓存契约与未命中错误；Loader 位于 contrib/cache/loader，内存后端位于 contrib/cache/memory |
+| `storage/vector` | 向量记录、原子批量写入／删除与有界检索；显式选择精确或近似查询 |
+| `storage/search` | 文档索引、文本查询、标签过滤、分页及后端评分契约 |
 | `messaging/broker` | 发布订阅契约与轻量消费者 Hook；内存后端位于 contrib/broker/memory |
 | `messaging/jobqueue` | 任务契约、选项与轻量工作者 Hook；内存后端位于 contrib/jobqueue/memory |
 | `internal/...` | 私有的依赖检查、发现地址选择和消费者生命周期助手 |
@@ -118,7 +123,7 @@ nil handler 属于编程错误。完整中间件实现和顺序验证见
 mkdir servex-demo
 cd servex-demo
 go mod init example.com/servex-demo
-go get github.com/nostosx/servex@v1.4.0
+go get github.com/nostosx/servex@v1.5.0
 mkdir server client
 ```
 

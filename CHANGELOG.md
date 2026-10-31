@@ -6,6 +6,14 @@ changes; each one is listed under "Breaking changes" with its migration.
 
 ## Unreleased
 
+## v1.5.0
+
+Release date: 2026-10-31.
+
+- Add backend-independent `storage/vector` and `storage/search` contracts for
+  bounded, tenant-scoped vector/document adapters in servex-contrib. The core
+  contains no SQL, embedding generation, index engine or new dependency.
+
 ## v1.4.0
 
 Release date: 2026-10-29.

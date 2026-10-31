@@ -1,5 +1,9 @@
 # servex
 
+Servex v1.5.0 adds backend-independent `storage/vector` and `storage/search` contracts.
+PostgreSQL backends and extension operations live in servex-contrib; applications
+select embedding models, credentials, namespaces and index policies.
+
 English | [简体中文](README.zh-CN.md)
 
 servex is a Go microservice toolkit built as a light core with pluggable
@@ -8,7 +12,7 @@ the minimal framework runtime, using the Go standard library. Implementations
 that need third-party SDKs, such as gRPC, Redis and OpenTelemetry, live in
 [servex-contrib](https://github.com/nostosx/servex-contrib).
 
-The current release is v1.4.0. Minor releases may contain breaking API
+The current release is v1.5.0. Minor releases may contain breaking API
 changes; each one is listed with its migration in [CHANGELOG.md](CHANGELOG.md).
 Patch releases do not change the API.
 
@@ -25,7 +29,7 @@ their release-time layout.
 Requires Go 1.27.3. Add servex to your application module:
 
 ```sh
-go get github.com/nostosx/servex@v1.4.0
+go get github.com/nostosx/servex@v1.5.0
 ```
 
 servex v1.4.0 has no external module dependencies. Core tags have no directory prefix: `v1.4.0`.
@@ -86,6 +90,8 @@ imports and approved kitx packages:
 | `selector` | `Selector`, `Node`, `Done` contracts; algorithms live in contrib. |
 | `transport` | `Server`, `Invoker` and `InvokerFunc` contracts; the shared client engine lives in contrib/transport/client. |
 | `storage/cache` | Byte-oriented `Cache` contract and miss error; read-through Loader lives in contrib/cache/loader. |
+| `storage/vector` | Vector records, atomic batch writes/deletes and bounded exact or explicitly approximate search |
+| `storage/search` | Document indexing, text retrieval, exact labels, pagination and backend-specific scores |
 | `messaging/broker` | `Message`, `Publisher`, `Subscriber` and `NewConsumer`, a Hook that runs a subscription. Handlers are endpoints. |
 | `messaging/jobqueue` | `Enqueuer`, `Runner`, enqueue options (delay, retry, uniqueness) and `NewWorker`, a Hook that runs job handlers. |
 | `internal/...` | Private dependency checks, discovery address selection and consumer lifecycle helpers. |
@@ -136,7 +142,7 @@ To try the following service in a new directory, initialize an application modul
 mkdir servex-demo
 cd servex-demo
 go mod init example.com/servex-demo
-go get github.com/nostosx/servex@v1.4.0
+go get github.com/nostosx/servex@v1.5.0
 mkdir server client
 ```
 
