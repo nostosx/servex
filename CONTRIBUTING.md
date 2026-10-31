@@ -120,6 +120,8 @@ transitive imports.
 | `selector` | `errorx` |
 | `discovery` | `app`, `internal/host` |
 | `storage/cache` | none |
+| `storage/vector` | none |
+| `storage/search` | none |
 | `messaging/broker` | `app`, `endpoint`, `metadata`, `errorx`, `internal/runhook` |
 | `messaging/jobqueue` | `app`, `endpoint`, `metadata`, `errorx`, `internal/runhook` |
 | `transport` | `app` |

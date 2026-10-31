@@ -27,7 +27,7 @@ const anyCorePackage = "*"
 // TestContractOnlyPackages keeps loading, decoding and logger backends out of
 // packages whose ownership is explicitly limited to contract declarations.
 func TestContractOnlyPackages(t *testing.T) {
-	for _, name := range []string{"config", "logger", "encoding", "selector", "observability/metrics", "storage/cache", "transport", "transport/sse", "transport/websocket", "transport/rpc"} {
+	for _, name := range []string{"config", "logger", "encoding", "selector", "observability/metrics", "storage/cache", "storage/vector", "storage/search", "transport", "transport/sse", "transport/websocket", "transport/rpc"} {
 		dir := filepath.Join("..", "..", name)
 		entries, err := os.ReadDir(dir)
 		if err != nil {
@@ -81,6 +81,8 @@ var allowed = map[string][]string{
 	"selector":              {"errorx"},
 	"discovery":             {"app", "internal/host"},
 	"storage/cache":         nil,
+	"storage/vector":        nil,
+	"storage/search":        nil,
 	"messaging/broker":      {"app", "endpoint", "metadata", "errorx", "internal/runhook"},
 	"messaging/jobqueue":    {"app", "endpoint", "metadata", "errorx", "internal/runhook"},
 	"transport":             {"app"},
